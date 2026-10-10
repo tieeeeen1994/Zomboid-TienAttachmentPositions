@@ -1,4 +1,5 @@
 version=1
+id=3817418114
 title=Tien's Attachment Positions
 description=Move, turn and resize what hangs on your character, and every other player sees it on you.
 description=
