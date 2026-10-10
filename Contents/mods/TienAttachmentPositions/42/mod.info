@@ -1,0 +1,8 @@
+name=Tien's Attachment Positions
+id=TienAttachmentPositions
+description=Move, turn and resize what hangs on your character: knives on the belt, guns in holsters, rifles on the back, and every slot that bag and attachment mods add. Right-click an attached item and pick Adjust position. Your settings are your own and every other player sees them on you in multiplayer. Works with any mod that adds attachment slots, Plysken Attachments Reborn included.
+author=Tien
+poster=poster.png
+icon=icon.png
+modversion=0.1.0
+category=QoL
