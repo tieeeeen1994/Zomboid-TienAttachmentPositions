@@ -50,7 +50,7 @@ local function jlist(t)
 end
 
 local function modelScript(name, static)
-    local ms = { name = name, static = static, list = {}, byId = {} }
+    local ms = { key = name, name = name, static = static, list = {}, byId = {} }
     function ms:getName() return self.name end
     function ms:isStatic() return self.static end
     function ms:getAttachmentCount() return #self.list end
@@ -72,13 +72,16 @@ end
 M.female = modelScript("FemaleBody", true)
 M.male = modelScript("MaleBody", true)
 M.knifeModel = modelScript("Knife", true)
+-- Merged script blocks reset the body scripts: static again and the name nulled (ModelScript.reset).
+M.female.name = nil
+M.male.name = nil
 point(M.female, "belt_left", "Bip01_Pelvis", { 0.1, 0.2, 0.3 }, { 10, 20, 30 })
 point(M.male, "belt_left", "Bip01_Pelvis", { 0.11, 0.21, 0.31 }, { 11, 21, 31 })
 point(M.female, "ShoulderHolster", "Bip01_Spine", { 0, 0, 0 }, { 0, 0, 0 })
 point(M.female, "Alicepack_ulmask", "Bip01_Spine", { 0.5, 0, 0 }, { 0, 90, 0 })
 point(M.knifeModel, "belt_left", nil, { 0.01, 0.02, 0.03 }, { 1, 2, 3 }, 0.5)
 local scripts = jlist({ M.female, M.male, M.knifeModel })
-getScriptManager = function() return { getAllModelScripts = function() return scripts end, getModelScript = function(_, n) for _, s in ipairs(scripts.t) do if s.name == n then return s end end return nil end } end
+getScriptManager = function() return { getAllModelScripts = function() return scripts end, getModelScript = function(_, n) for _, s in ipairs(scripts.t) do if s.key == n then return s end end return nil end } end
 
 local function location(id)
     local l = { id = id }

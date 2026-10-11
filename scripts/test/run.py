@@ -114,7 +114,9 @@ check(sp.eval("M.moddata.TienAttachmentPositions.pts['1'].ShoulderHolster") is N
 check(sp.eval("M.moddata.TienAttachmentPositions.pts['1'].no_such_point") is None, "SP: server refuses an unknown point")
 L(sp, "P:setAttachedItem('bowtie', M.item(3))")
 check("bowtie=3" in sp.eval("M.locs(P)"), "SP: bowtie untouched")
-check(len(list(sp.eval("M.logs").values())) == 0, "SP: nothing logged: " + repr(list(sp.eval("M.logs").values())))
+logs = [l for l in sp.eval("M.logs").values() if "model scripts with points" not in l]
+check(len(logs) == 0, "SP: nothing logged: " + repr(logs))
+check(any("bodies: 2" in l for l in sp.eval("M.logs").values()), "SP: index log finds both bodies: " + repr(list(sp.eval("M.logs").values())))
 
 # ---------------- multiplayer ----------------
 srv = runtime("server")
@@ -230,7 +232,7 @@ pump()
 check(ca.eval("M.locs(ME)") == "Belt Left=10", "MP: reset all moves alice's knife back")
 check(cb.eval("M.locs(OTHER)") == "Belt Left=10", "MP: bob sees it back on the base")
 for name, rt in (("alice", ca), ("bob", cb), ("carol", cc), ("server", srv)):
-    logs = list(rt.eval("M.logs").values())
+    logs = [l for l in rt.eval("M.logs").values() if "model scripts with points" not in l]
     check(len(logs) == 0, f"MP: nothing logged on {name}: {logs!r}")
 
 print("\n%d failure(s)" % len(FAILS))

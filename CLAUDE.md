@@ -29,13 +29,17 @@ everyone in `GameCharacterAttachedItemPacket`. So each player who adjusts a poin
   multiplied); every other script (item models) gets an unchanged copy, because `addStatic(parent, model, name, name)`
   also looks up the item model's **own** attachment of that name (Plysken's masks and tents fine-tune themselves that
   way), so without it those items would lose their own offset on a copy.
-- A body script is recognised **by name** (`Core.IsBody`): `FemaleBody`, `MaleBody`, plus whatever
-  `chr:getHumanVisual():getModelScript()` returns for a player seen (`HumanVisual.getModelScript`: `forceModelScript`
-  or FemaleBody / MaleBody by sex; `Core.NoteBody`, which re-applies every copy when it learns a new one). Never by
-  `ModelScript:isStatic()`: model scripts load with `ResetExisting`, so every further `model FemaleBody` block (Plysken,
-  KATTAJ1 and other attachment mods add their points that way) calls `reset()` first, which sets `isStatic` back to
-  true (attachments survive). With Plysken loaded the bodies report static; 0.1.0 checked the flag, so every spot was
-  greyed out ("no point on the model") on the first server test, 2026-10-11.
+- A body script is recognised **as an object** (`Core.IsBody`, a table keyed by the ModelScript):
+  `getScriptManager():getModelScript("FemaleBody")` / `("MaleBody")` (looked up by the bucket's map key), plus
+  whatever `chr:getHumanVisual():getModelScript()` returns for a player seen (`HumanVisual.getModelScript`:
+  `forceModelScript` or FemaleBody / MaleBody by sex; `Core.NoteBody`, which re-applies every copy when it learns a new
+  one). Factory values are keyed by the script object too. Never by `isStatic()` or `getName()`: model scripts load
+  with `ResetExisting`, so every further `model FemaleBody` block (Plysken, KATTAJ1 and other attachment mods add their
+  points that way) calls `reset()` first, which sets `isStatic` back to true **and `name` to null** (only
+  `InitLoadPP`, at parse time, sets it; attachments survive). With Plysken loaded the bodies report static and
+  `getName()` is nil. 0.1.0 checked the flag and 0.1.1 the name, so on the server tests of 2026-10-11 every spot was
+  greyed out ("no point on the model"). Each world load logs `[TienAttachmentPositions] model scripts with points: N,
+  bodies: 2, body points: M`; bodies 0 means this went wrong again.
 - location copy `<location>@<ns>` for **every** location whose attachment name is the point (vanilla has several
   locations per point), pointing at the point copy.
 

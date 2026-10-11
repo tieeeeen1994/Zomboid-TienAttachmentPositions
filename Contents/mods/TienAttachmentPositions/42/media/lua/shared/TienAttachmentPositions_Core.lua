@@ -145,26 +145,61 @@ local function buildScriptIndex()
     end
 end
 
+local function logIndex()
+    local scripts, bodyCount, bodyPoints = 0, 0, 0
+    local seen = {}
+    for _, list in pairs(scriptIndex) do
+        for _, script in ipairs(list) do
+            if not seen[script] then
+                seen[script] = true
+                scripts = scripts + 1
+                if Core.IsBody(script) then
+                    bodyCount = bodyCount + 1
+                    bodyPoints = bodyPoints + script:getAttachmentCount()
+                end
+            end
+        end
+    end
+    print("[TienAttachmentPositions] model scripts with points: " .. scripts .. ", bodies: " .. bodyCount
+        .. ", body points: " .. bodyPoints)
+end
+
 function Core.ScriptsWith(point)
-    if not scriptIndex then buildScriptIndex() end
+    if not scriptIndex then
+        buildScriptIndex()
+        logIndex()
+    end
     return scriptIndex[point] or {}
 end
 
-local bodies = { FemaleBody = true, MaleBody = true }
+local bodies
 
-function Core.NoteBody(chr)
-    local visual = chr and chr.getHumanVisual and chr:getHumanVisual()
-    local script = visual and visual:getModelScript()
-    local name = script and script:getName()
-    if name and not bodies[name] then
-        bodies[name] = true
+local function addBody(script)
+    if script and not bodies[script] then
+        bodies[script] = true
         return true
     end
     return false
 end
 
+local function knownBodies()
+    if not bodies then
+        bodies = {}
+        local manager = getScriptManager()
+        addBody(manager:getModelScript("FemaleBody"))
+        addBody(manager:getModelScript("MaleBody"))
+    end
+    return bodies
+end
+
+function Core.NoteBody(chr)
+    knownBodies()
+    local visual = chr and chr.getHumanVisual and chr:getHumanVisual()
+    return addBody(visual and visual:getModelScript())
+end
+
 function Core.IsBody(script)
-    return bodies[script:getName()] == true
+    return knownBodies()[script] == true
 end
 
 function Core.HasBodyPoint(point)
@@ -180,8 +215,8 @@ local function vec(v)
 end
 
 local function factoryOf(script, point, attachment)
-    local key = script:getName() .. "|" .. point
-    local f = factory[key]
+    factory[script] = factory[script] or {}
+    local f = factory[script][point]
     if f then return f end
     local ox, oy, oz = vec(attachment:getOffset())
     local rx, ry, rz = vec(attachment:getRotate())
@@ -192,7 +227,7 @@ local function factoryOf(script, point, attachment)
         rx, ry, rz = par.rot[1], par.rot[2], par.rot[3]
     end
     f = { ox, oy, oz, rx, ry, rz, attachment:getScale() }
-    factory[key] = f
+    factory[script][point] = f
     return f
 end
 
@@ -262,6 +297,7 @@ function Core.ResetWorld()
     Core.locs = {}
     scriptIndex = nil
     factory = {}
+    bodies = nil
     pointMap = nil
     pointMapSize = nil
 end
