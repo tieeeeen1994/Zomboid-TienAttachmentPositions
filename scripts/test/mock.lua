@@ -83,6 +83,8 @@ point(M.female, "Alicepack_ulmask", "Bip01_Spine", { 0.5, 0, 0 }, { 0, 90, 0 })
 point(M.female, "walkie_belt_left", "Bip01_Pelvis", { 0.2, 0, 0 }, { 0, 0, 0 })
 point(M.female, "rifle_back", "Bip01_Spine", { 0, 0.3, 0 }, { 0, 0, 0 })
 point(M.female, "rifle_back_bag", "Bip01_Spine", { 0, 0.4, 0 }, { 0, 0, 0 })
+point(M.female, "sling_rifle", "Bip01_Spine", { 0, 0.5, 0 }, { 0, 0, 0 })
+point(M.female, "sling_bag", "Bip01_Spine", { 0, 0.6, 0 }, { 0, 0, 0 })
 point(M.knifeModel, "belt_left", nil, { 0.01, 0.02, 0.03 }, { 1, 2, 3 }, 0.5)
 local scripts = jlist({ M.female, M.male, M.knifeModel })
 getScriptManager = function() return { getAllModelScripts = function() return scripts end, getModelScript = function(_, n) for _, s in ipairs(scripts.t) do if s.key == n then return s end end return nil end } end
@@ -109,11 +111,16 @@ group:getOrCreateLocation("AlicepackulMask"):setAttachmentName("Alicepack_ulmask
 group:getOrCreateLocation("Walkie Belt Left"):setAttachmentName("walkie_belt_left")
 group:getOrCreateLocation("Rifle On Back"):setAttachmentName("rifle_back")
 group:getOrCreateLocation("Rifle On Back with Bag"):setAttachmentName("rifle_back_bag")
+group:getOrCreateLocation("Sling Rifle Back"):setAttachmentName("sling_rifle")
+group:getOrCreateLocation("Sling Rifle Bag"):setAttachmentName("sling_bag")
 ISHotbarAttachDefinition = {
     { type = "SmallBeltLeft", name = "Belt Left", attachments = { Knife = "Belt Left Upside", Hammer = "Belt Left",
         Walkie = "Walkie Belt Left", Odd = "Holster Shoulder", Gone = "No Such Location" } },
     { type = "Back", name = "Back", attachments = { Rifle = "Rifle On Back" } },
-    replacements = { { type = "Bag", name = "Back", replacement = { Rifle = "Rifle On Back with Bag", Guitar = "null" } } },
+    { type = "SlingBack", name = "Sling (Back)", attachments = { Rifle = "Sling Rifle Back" } },
+    -- Alice's Weapon Sling adds its bag spots to vanilla's Back replacement under suffixed keys.
+    replacements = { { type = "Bag", name = "Back", replacement = { Rifle = "Rifle On Back with Bag", Guitar = "null",
+        RifleAliceSling = "Sling Rifle Bag" } } },
 }
 
 ResourceLocation = { of = function(id) return { path = id:lower() } end }
@@ -155,6 +162,7 @@ M.index = index
 local pmethods = {
     getUsername = function(s) return s.user end,
     isLocalPlayer = function(s) return s.localP end,
+    getPlayerNum = function(s) return 0 end,
     getOnlineID = function(s) return s.onlineID or 0 end,
     getAttachedItems = function(s) return s.ai end,
     resetModelNextFrame = function(s) s.resets = s.resets + 1 end,

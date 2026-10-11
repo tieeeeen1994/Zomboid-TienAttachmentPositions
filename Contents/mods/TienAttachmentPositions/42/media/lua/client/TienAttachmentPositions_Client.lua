@@ -73,7 +73,7 @@ function Client.Handle(command, args)
             .. (mine and count(Core.pts[mine]) or 0) .. " spots")
         Core.RegisterAll()
         refresh(nil)
-        if Client.window then Client.window:reload() end
+        if Client.window then Client.window:serverUpdate() end
     elseif command == "pt" then
         local user, ns = args.u, args.n
         if type(user) ~= "string" or type(ns) ~= "string" then return end
@@ -89,13 +89,13 @@ function Client.Handle(command, args)
                 if not stale then
                     Core.pts[ns] = Core.pts[ns] or {}
                     Core.pts[ns][point] = args.v
-                    if Client.window and Client.window.point == point then reload = true end
+                    if Client.window and Client.window.has[point] then reload = true end
                 end
                 Core.Register(ns, point)
             end
         end
         refresh(user)
-        if reload and isLocalUser(user) then Client.window:reload() end
+        if reload and isLocalUser(user) then Client.window:serverUpdate() end
     elseif command == "resend" then
         for i = 0, getNumActivePlayers() - 1 do
             local player = getSpecificPlayer(i)
@@ -145,34 +145,78 @@ local function slotLocations(slotType)
     for _, d in ipairs(defs) do
         if type(d) == "table" and d.type == slotType then def = d break end
     end
-    if not def then return list end
-    for _, loc in pairs(def.attachments or {}) do
+    if not def or type(def.attachments) ~= "table" then return list end
+    for _, loc in pairs(def.attachments) do
         if type(loc) == "string" then list[#list + 1] = loc end
     end
     for _, r in ipairs(type(defs.replacements) == "table" and defs.replacements or {}) do
         if type(r) == "table" and r.name == def.name and type(r.replacement) == "table" then
-            for _, loc in pairs(r.replacement) do
-                if type(loc) == "string" and loc ~= "null" then list[#list + 1] = loc end
+            for key, loc in pairs(r.replacement) do
+                if def.attachments[key] ~= nil and type(loc) == "string" and loc ~= "null" then
+                    list[#list + 1] = loc
+                end
             end
         end
     end
     return list
 end
 
+local function usable(p)
+    return p ~= nil and Core.Adjustable(p) and Core.HasBodyPoint(p)
+end
+
+local staticGroups = {}
+
+local function slotGroup(slotType)
+    local static = staticGroups[slotType]
+    if not static then
+        static = {}
+        for _, loc in ipairs(slotLocations(slotType)) do
+            local p = Core.PointOf(loc)
+            if usable(p) then static[p] = true end
+        end
+        staticGroups[slotType] = static
+    end
+    local points = {}
+    for p in pairs(static) do points[p] = true end
+    return points
+end
+
+function Client.ResetGroups()
+    staticGroups = {}
+end
+
 function Client.SlotPoints(item, point)
-    local points, seen = { point }, { [point] = true }
+    local points = { point }
     local slotType = item and item.getAttachedSlotType and item:getAttachedSlotType()
     local others = {}
-    for _, loc in ipairs(slotLocations(slotType)) do
-        local p = Core.PointOf(loc)
-        if p and not seen[p] and Core.Adjustable(p) and Core.HasBodyPoint(p) then
-            seen[p] = true
-            others[#others + 1] = p
-        end
+    for p in pairs(slotGroup(slotType)) do
+        if p ~= point then others[#others + 1] = p end
     end
     table.sort(others)
     for _, p in ipairs(others) do points[#points + 1] = p end
     return points
+end
+
+function Client.Prepare(player, points)
+    local ns = Core.IdOf(player)
+    local fresh = {}
+    for _, point in ipairs(points) do
+        if not (ns and Core.IsRegistered(ns, point)) then fresh[#fresh + 1] = point end
+    end
+    if #fresh == 0 then return true end
+    Client.Edit(player, fresh, Core.Identity())
+    Client.Flush()
+    return false
+end
+
+function Client.Preview(player, points, v)
+    local ns = Core.IdOf(player)
+    if not ns then return end
+    for _, point in ipairs(points) do
+        if Core.IsRegistered(ns, point) then Core.ApplyValues(ns, point, v) end
+    end
+    player:resetModelNextFrame()
 end
 
 function Client.ResetAll(player)
@@ -269,6 +313,7 @@ end
 local function onGameStart()
     quietPlysken()
     Core.ResetWorld()
+    Client.ResetGroups()
     helloTries = 0
     helloAt = nil
     helloWait = true

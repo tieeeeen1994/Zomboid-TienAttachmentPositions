@@ -1,6 +1,7 @@
 require "ISUI/ISCollapsableWindow"
 require "ISUI/ISLabel"
 require "ISUI/ISButton"
+require "ISUI/ISModalDialog"
 require "RadioCom/ISUIRadio/ISSliderPanel"
 require "TienAttachmentPositions_Core"
 
@@ -53,6 +54,7 @@ local function layout(heading)
     L.valueW = measure("-180.000")
     L.sliderW = math.max(200, fh * 12)
     L.buttons = {
+        { text = getText("IGUI_TienAttachmentPositions_Save"), fn = Window.onSave },
         { text = getText("IGUI_TienAttachmentPositions_Reset"), fn = Window.onReset },
         { text = getText("IGUI_TienAttachmentPositions_ResetAll"), fn = Window.onResetAll },
         { text = getText("IGUI_TienAttachmentPositions_Close"), fn = Window.close },
@@ -91,6 +93,9 @@ function Window:new(player, points, heading)
     o.player = player
     o.points = points
     o.point = points[1]
+    o.has = {}
+    for _, p in ipairs(points) do o.has[p] = true end
+    o.dirty = false
     o.title = getText("IGUI_TienAttachmentPositions_Title")
     o.resizable = false
     local th = o:titleBarHeight()
@@ -180,26 +185,66 @@ function Window:reload()
     if self.rows then self:show(self:current()) end
 end
 
+function Window:preview()
+    self.dirty = true
+    Core.Client.Prepare(self.player, self.points)
+    Core.Client.Preview(self.player, self.points, self.v)
+end
+
+function Window:serverUpdate()
+    if self.dirty then
+        Core.Client.Preview(self.player, self.points, self.v)
+    else
+        self:reload()
+    end
+end
+
 function Window:onSlider(value, slider)
     local row = self.rows[slider.key]
     if not row then return end
     self.v[slider.key] = value
     row.value:setName(string.format(row.fmt, value))
+    self:preview()
+end
+
+function Window:onSave()
+    self.dirty = false
     Core.Client.Edit(self.player, self.points, self.v)
+    Core.Client.Flush()
+end
+
+function Window:ask(textKey, which)
+    local dialog = ISModalDialog:new(0, 0, 250, 150, getText(textKey), true, self, Window.onAnswer,
+        self.player:getPlayerNum(), which)
+    dialog:initialise()
+    dialog:addToUIManager()
+end
+
+function Window:onAnswer(button, which)
+    if button.internal ~= "YES" then return end
+    self.dirty = false
+    self:show(Core.Identity())
+    if which == "all" then
+        Core.Client.ResetAll(self.player)
+    else
+        Core.Client.Edit(self.player, self.points, self.v)
+        Core.Client.Flush()
+    end
 end
 
 function Window:onReset()
-    self:show(Core.Identity())
-    Core.Client.Edit(self.player, self.points, self.v)
+    self:ask("IGUI_TienAttachmentPositions_ResetAsk", "slot")
 end
 
 function Window:onResetAll()
-    self:show(Core.Identity())
-    Core.Client.ResetAll(self.player)
+    self:ask("IGUI_TienAttachmentPositions_ResetAllAsk", "all")
 end
 
 function Window:close()
-    Core.Client.Flush()
+    if self.dirty then
+        self.dirty = false
+        Core.Client.Preview(self.player, self.points, nil)
+    end
     if Core.Client.window == self then Core.Client.window = nil end
     ISCollapsableWindow.close(self)
     self:removeFromUIManager()

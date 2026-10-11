@@ -2,7 +2,7 @@ TienAttachmentPositions = TienAttachmentPositions or {}
 local Core = TienAttachmentPositions
 
 Core.MODULE = "TienAttachmentPositions"
-Core.VERSION = "0.1.7"
+Core.VERSION = "0.1.8"
 Core.MOVE = 0.5
 Core.TURN = 180
 Core.SIZE_MIN = 0.25
@@ -273,9 +273,14 @@ function Core.Turn(fx, fy, fz, rx, ry, rz)
     return x / RAD, y / RAD, z / RAD
 end
 
-function Core.ApplyValues(ns, point)
+function Core.ApplyValues(ns, point, preview)
     if isServer() then return end
-    local v = Core.ValuesFor(ns, point)
+    local v
+    if preview ~= nil then
+        v = Core.Clean(preview)
+    else
+        v = Core.ValuesFor(ns, point)
+    end
     local cloneId = Core.CloneName(point, ns)
     for _, script in ipairs(Core.ScriptsWith(point)) do
         local base = script:getAttachmentById(point)
@@ -347,7 +352,7 @@ end
 function Core.Want(chr, base)
     local ns = Core.IdOf(chr)
     local point = Core.PointOf(base)
-    if ns and point and Core.IsRegistered(ns, point) and Core.ValuesFor(ns, point) then
+    if ns and point and Core.IsRegistered(ns, point) then
         return Core.CloneName(base, ns)
     end
     return base
@@ -369,10 +374,8 @@ function Core.Target(chr, loc, item)
         if loc == base and Core.vanillaGet(chr, clone) then return clone end
         return loc
     end
-    local want = Core.ValuesFor(ns, point) and clone or base
-    local other = want == clone and base or clone
-    if Core.vanillaGet(chr, other) then Core.vanillaSet(chr, other, nil) end
-    return want
+    if Core.vanillaGet(chr, base) then Core.vanillaSet(chr, base, nil) end
+    return clone
 end
 
 function Core.Lookup(chr, loc)

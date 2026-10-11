@@ -51,8 +51,10 @@ everyone in `GameCharacterAttachedItemPacket`. So each player who adjusts a poin
 - location copy `<location>@<ns>` for **every** location whose attachment name is the point (vanilla has several
   locations per point), pointing at the point copy.
 
-Copies are never removed: saved characters and corpses may name them. A reset point keeps its copies at factory
-values and its items move back to the base location. Factory values are read the first time a point is copied; with
+Copies are never removed: saved characters and corpses may name them. A registered point always carries the player's
+items on their copy (`Core.Want` / `Target`), at factory values when they have none (reset), so nothing moves between
+base and copy while editing (0.1.7 and earlier went back to the base at identity, a pair of attach packets each time
+a drag crossed zero). Factory values are read the first time a point is copied; with
 Plysken loaded, its `PAR_AttachCalibrate.factoryPoints` win (it may already have moved the base point).
 
 ### The wrappers
@@ -137,11 +139,29 @@ and the per-point storage, copies and protocol stay as they were. The definition
 (`client/Hotbar/ISHotbarAttachDefinition.lua`, plus slot mods' client files), so the server only checks each point.
 A point shared by two slots follows whichever slot was edited last. The window shows the item's own point's values.
 
-### Live editing
+A replacement value joins a slot only when its key is one of that slot's `attachments` keys: Alice's Weapon Sling
+(3775549570) files its bag spots (`AliceSlingRifleBag`...) in vanilla's Back replacement under keys like
+`RifleAliceSling` and uses them only for its Sling (Back) slot (`resolveReplacementSlot`), so matching by name alone
+put them in vanilla's Back slot. They are not in the sling slot's group either: open the window while the sling item
+hangs on the bag spot to include it (the item's own point is always in the group).
 
-The window sends at most every 150 ms (`Client.SEND_MS`, flushed on close) and applies each slider move to its own
-copy at once. Each edit has a sequence number per user and point (one number for all the points of a slot edit); an echo older than the latest local edit is
-registered but its values are ignored, so the slider is never pulled back while dragging.
+A 0.1.8 draft filled unset points of a slot from its other points every 500 ms and learned points seen in use; the
+user chose a Save button instead (2026-10-12), so nothing is checked periodically besides the 2 s `Normalize`.
+Settings saved per point before 0.1.7 line up once Save is pressed in the window.
+
+### Editing: preview, Save, resets (0.1.8)
+
+Sliders only preview: `Client.Preview` applies the window's values to the player's own copies on this screen
+(`Core.ApplyValues(ns, point, v)`; nothing sent, nothing stored). A point not registered yet cannot be previewed (no
+copy to move the item to, and the attach of a copy location must reach every client after its registration), so the
+first preview calls `Client.Prepare`: one `set` of identity values for the slot's unregistered points only, which
+registers them everywhere without changing their look; the `pt` echo makes the window re-apply its preview
+(`Window:serverUpdate`, which keeps the sliders while there are unsaved changes). **Save** = `Client.Edit` of the
+window's values for every point of the slot + `Flush`: one `set`, one `pt` to everyone. Closing with unsaved changes
+re-applies the stored values (`Preview(nil)`). **Reset this slot** / **Reset every slot** ask with an `ISModalDialog`
+(yes / no) and on yes save at once (identity `set` for the slot / `resetAll`), no Save needed. Each `set` has a
+sequence number per user and point (one for all the points of a slot); an echo older than the latest local one is
+registered but its values are ignored.
 
 ### Clothing-hidden points
 
@@ -172,8 +192,10 @@ and moved a spot for every character on that screen, which would make players lo
 
 `scripts/test`: `mock.lua` imitates the Java side (location group with `checkValid`, model scripts, class
 metatables, players, commands); `run.py` runs single player and a server with three clients, routing commands and
-attach packets the way the game does (Java-side attaches call the original method, not the wrapper); `win.py` builds
-the window at several font and screen sizes and checks for overflow and overlaps. Needs lupa:
+attach packets the way the game does (Java-side attaches call the original method, not the wrapper), plus a second
+server with two clients driving the real window (preview, Save, close, both resets); `ui_mock.lua` holds the stand-ins
+for the vanilla UI classes (a dialog answers through `M.dialog:answer("YES")`); `win.py` builds the window at several
+font and screen sizes and checks for overflow and overlaps. Needs lupa:
 `py -m pip install --target <dir> lupa`, then `LUPA_PATH=<dir> py -I scripts/test/run.py` (and `win.py`).
 
 ## To verify

@@ -89,7 +89,8 @@ C.Edit(P, "belt_left", { ox = 0, oy = 0, oz = 0, rx = 0, ry = 0, rz = 0, s = 1 }
 M.now = 2000
 Events.OnTick.fire()
 """)
-check(sp.eval("M.locs(P)") == "Belt Left Upside=2,Belt Left=1", "SP: reset moves items back to the base locations")
+check(sp.eval("M.locs(P)") == "Belt Left Upside@1=2,Belt Left@1=1", "SP: after a reset the items stay on the player's copy")
+check(abs(sp.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6, "SP: and the copy is back at the factory spot")
 check(sp.eval("M.moddata.TienAttachmentPositions.pts['1'].belt_left") is None, "SP: reset removes the stored values")
 check(sp.eval("M.moddata.TienAttachmentPositions.reg['1'].belt_left") is True, "SP: registration is kept after reset")
 check(sp.eval("TienAttachmentPositions.Adjustable('ShoulderHolster')") is False, "SP: clothing-tied point not adjustable")
@@ -281,8 +282,8 @@ ca = ca2
 # Reset all on alice.
 L(ca, "TienAttachmentPositions.Client.ResetAll(ME)")
 pump()
-check(ca.eval("M.locs(ME)") == "Belt Left=10", "MP: reset all moves alice's knife back")
-check(cb.eval("M.locs(OTHER)") == "Belt Left=10", "MP: bob sees it back on the base")
+check(ca.eval("M.locs(ME)") == "Belt Left@1=10", "MP: reset all keeps alice's knife on her copy")
+check(abs(cb.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6, "MP: bob sees her copy back at the factory spot")
 for name, rt in (("alice", ca), ("bob", cb), ("carol", cc), ("server", srv)):
     logs = [l for l in rt.eval("M.logs").values() if not l.startswith("[TienAttachmentPositions] ")]
     check(len(logs) == 0, f"MP: nothing logged on {name}: {logs!r}")
@@ -310,6 +311,97 @@ L(sl, "P:setAttachedItem('Belt Left Upside', nil); WALKIE = M.item(2, 'SmallBelt
 check(sl.eval("M.locs(P)") == "Walkie Belt Left@1=2", "slot: a walkie attached later goes on the player's copy: " + sl.eval("M.locs(P)"))
 check(abs(sl.eval("M.female.byId['walkie_belt_left@1'].off.X") - 0.3) < 1e-6, "slot: the walkie's point got the same move")
 check(len(list(sl.eval("M.errors").values())) == 0, "slot: no errors")
+
+# The window: sliders only preview on the owner's screen, Save sends the whole slot to the server and everyone,
+# closing without saving puts the saved values back, the resets ask and then save at once.
+srv2, wa, wb = runtime("server"), runtime("client"), runtime("client")
+wa.globals().TAP_TEST_DIR = HERE
+wa.eval("loadfile")(os.path.join(HERE, "ui_mock.lua"))(MOD, 15)
+L(srv2, "SP_ = { amy = M.player('amy', false), ben = M.player('ben', false) }; M.online = { SP_.amy, SP_.ben }; Events.OnInitGlobalModData.fire(true)")
+L(wa, "ME = M.player('amy', true); OTHER = M.player('ben', false); M.locals = { ME }; M.online = { ME, OTHER }")
+L(wb, "ME = M.player('ben', true); OTHER = M.player('amy', false); M.locals = { ME }; M.online = { ME, OTHER }")
+wclients = {"amy": wa, "ben": wb}
+
+
+def wpump():
+    for _ in range(6):
+        for user, rt in wclients.items():
+            out = list(rt.eval("M.out").values())
+            rt.execute("M.out = {}")
+            for msg in out:
+                srv2.eval("Events.OnClientCommand.fire")(msg.module, msg.command, srv2.eval("SP_." + user), to_lua(srv2, to_py(msg.args)))
+            pkts = list(rt.eval("M.packets").values())
+            rt.execute("M.packets = {}")
+            for p in pkts:
+                srv2.eval("function(u, loc, id) M.javaSet(SP_[u], loc, id and M.item(id) or nil) end")(user, p.loc, p.item)
+                other = wb if user == "amy" else wa
+                other.eval("function(loc, id) local ok, e = pcall(M.javaSet, OTHER, loc, id and M.item(id) or nil) if not ok then table.insert(M.errors, tostring(e)) end end")(p.loc, p.item)
+        out = list(srv2.eval("M.out").values())
+        srv2.execute("M.out = {}")
+        for msg in out:
+            for t in ([msg.to] if msg.to else list(wclients)):
+                wclients[t].eval("Events.OnServerCommand.fire")(msg.module, msg.command, to_lua(wclients[t], to_py(msg.args)))
+
+
+def sent(rt):
+    return [m.command for m in rt.eval("M.out").values()]
+
+
+L(wa, "Events.OnGameStart.fire()")
+L(wb, "Events.OnGameStart.fire()")
+wpump()
+L(wa, """
+KNIFE = M.item(10, "SmallBeltLeft")
+ME:setAttachedItem("Belt Left", KNIFE)
+WIN = TienAttachmentPositionsWindow:new(ME, TienAttachmentPositions.Client.SlotPoints(KNIFE, "belt_left"), "Knife")
+WIN:initialise(); WIN:instantiate(); WIN:createChildren()
+TienAttachmentPositions.Client.window = WIN
+WIN.rows.ox.slider:setCurrentValue(0.2)
+""")
+wpump()
+check(wa.eval("M.locs(ME)") == "Belt Left@1=10", "window: the first preview registers the slot and moves the knife to amy's copy")
+check(abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: amy sees the preview")
+check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6, "window: ben does not see it before Save")
+check(abs(wa.eval("WIN.rows.ox.slider:getCurrentValue()") - 0.2) < 1e-6, "window: the server's answer does not pull the slider back")
+check(srv2.eval("(M.moddata.TienAttachmentPositions.pts['1'] or {}).belt_left == nil"), "window: nothing stored before Save")
+L(wa, "WIN.rows.oy.slider:setCurrentValue(0.1)")
+check(sent(wa) == [], "window: a preview of a registered slot sends nothing")
+L(wa, "WIN:onSave()")
+wpump()
+check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: ben sees it after Save")
+check(abs(wb.eval("M.female.byId['walkie_belt_left@1'].off.X") - 0.4) < 1e-6, "window: Save covers the whole slot")
+check(wb.eval("M.locs(OTHER)") == "Belt Left@1=10", "window: ben sees amy's knife on her copy")
+L(wa, "WIN.rows.ox.slider:setCurrentValue(-0.1)")
+check(abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.0) < 1e-6, "window: a second preview")
+L(wa, "WIN:close()")
+check(sent(wa) == [], "window: closing without saving sends nothing")
+check(abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: closing without saving puts the saved values back")
+wpump()
+check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: ben never saw the unsaved one")
+L(wa, """
+WIN = TienAttachmentPositionsWindow:new(ME, TienAttachmentPositions.Client.SlotPoints(KNIFE, "belt_left"), "Knife")
+WIN:initialise(); WIN:instantiate(); WIN:createChildren()
+TienAttachmentPositions.Client.window = WIN
+M.dialog = nil
+WIN:onReset()
+""")
+check(wa.eval("M.dialog ~= nil") and sent(wa) == [], "window: Reset this slot asks first")
+L(wa, "M.dialog:answer('NO')")
+check(sent(wa) == [] and abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: No changes nothing")
+L(wa, "WIN:onReset(); M.dialog:answer('YES')")
+wpump()
+check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6 and abs(wb.eval("M.female.byId['walkie_belt_left@1'].off.X") - 0.2) < 1e-6,
+      "window: Yes resets the whole slot for everyone without Save")
+L(wa, "WIN.rows.ox.slider:setCurrentValue(0.2); WIN:onSave()")
+wpump()
+L(wa, "M.dialog = nil; WIN:onResetAll()")
+check(wa.eval("M.dialog ~= nil") and sent(wa) == [], "window: Reset every slot asks first")
+L(wa, "M.dialog:answer('YES')")
+wpump()
+check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6, "window: Yes resets every slot for everyone without Save")
+check(abs(wa.eval("WIN.rows.ox.slider:getCurrentValue()")) < 1e-6, "window: and the sliders show it")
+for name, rt in (("amy", wa), ("ben", wb)):
+    check(len(list(rt.eval("M.errors").values())) == 0, f"window: no errors on {name} " + repr(list(rt.eval("M.errors").values())))
 
 # Turning: the player's turn is applied around the bone's axes on top of the spot's own turn, and the result is
 # written back as the X, Y, Z angles the game feeds to rotateXYZ (X first, in the point's frame).
