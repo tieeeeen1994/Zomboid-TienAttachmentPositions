@@ -2,6 +2,7 @@ TienAttachmentPositions = TienAttachmentPositions or {}
 local Core = TienAttachmentPositions
 
 Core.MODULE = "TienAttachmentPositions"
+Core.VERSION = "0.1.5"
 Core.MOVE = 0.5
 Core.TURN = 180
 Core.SIZE_MIN = 0.25
@@ -10,6 +11,7 @@ Core.MAX_POINTS = 300
 Core.FIELDS = { "ox", "oy", "oz", "rx", "ry", "rz", "s" }
 
 Core.ids = Core.ids or {}
+Core.moveLogs = 0
 Core.reg = Core.reg or {}
 Core.pts = Core.pts or {}
 Core.locs = Core.locs or {}
@@ -358,6 +360,10 @@ function Core.Normalize(chr)
         if Core.PointOf(base) then
             local want = Core.Want(chr, base)
             if want ~= loc then
+                if Core.moveLogs < 20 then
+                    Core.moveLogs = Core.moveLogs + 1
+                    print("[TienAttachmentPositions] " .. tostring(chr:getUsername()) .. ": " .. loc .. " -> " .. want)
+                end
                 Core.vanillaSet(chr, loc, nil)
                 Core.vanillaSet(chr, want, item)
             end

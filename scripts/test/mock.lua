@@ -142,6 +142,7 @@ M.index = index
 local pmethods = {
     getUsername = function(s) return s.user end,
     isLocalPlayer = function(s) return s.localP end,
+    getOnlineID = function(s) return s.onlineID or 0 end,
     getAttachedItems = function(s) return s.ai end,
     resetModelNextFrame = function(s) s.resets = s.resets + 1 end,
 }

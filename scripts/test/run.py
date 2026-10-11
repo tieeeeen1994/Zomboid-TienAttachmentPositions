@@ -114,7 +114,7 @@ check(sp.eval("M.moddata.TienAttachmentPositions.pts['1'].ShoulderHolster") is N
 check(sp.eval("M.moddata.TienAttachmentPositions.pts['1'].no_such_point") is None, "SP: server refuses an unknown point")
 L(sp, "P:setAttachedItem('bowtie', M.item(3))")
 check("bowtie=3" in sp.eval("M.locs(P)"), "SP: bowtie untouched")
-logs = [l for l in sp.eval("M.logs").values() if "model scripts with points" not in l]
+logs = [l for l in sp.eval("M.logs").values() if not l.startswith("[TienAttachmentPositions] ")]
 check(len(logs) == 0, "SP: nothing logged: " + repr(logs))
 check(any("bodies: 2" in l for l in sp.eval("M.logs").values()), "SP: index log finds both bodies: " + repr(list(sp.eval("M.logs").values())))
 
@@ -144,6 +144,9 @@ def item_in(rt, iid):
     return rt.eval(f"ITEMS[{iid}]")
 
 
+DROP_HELLO = [0]
+
+
 def pump():
     moved = True
     while moved:
@@ -153,6 +156,9 @@ def pump():
             rt.execute("M.out = {}")
             for msg in out:
                 moved = True
+                if msg.command == "hello" and DROP_HELLO[0] > 0:
+                    DROP_HELLO[0] -= 1
+                    continue
                 args = to_lua(srv, to_py(msg.args))
                 srv.eval("Events.OnClientCommand.fire")(msg.module, msg.command, srv.eval(f"SP_.{user}"), args)
             pkts = list(rt.eval("M.packets").values())
@@ -226,13 +232,58 @@ L(cc, "Events.OnGameStart.fire()")
 pump()
 check(cc.eval("M.locs(OTHER)") == "Belt Left@1=10", "MP: late joiner gets alice's knife on alice's copy (resend)")
 check(len(list(cc.eval("M.errors").values())) == 0, "MP: no errors on carol " + repr(list(cc.eval("M.errors").values())))
+# Alice relogs. The server reloads her from its save with the knife on her copy (registered there at world init);
+# her fresh game loaded her before the mod's data arrived, so it skipped that location and the knife hangs nowhere.
+# The hotbar then re-attaches it by its saved base name, before or after the data arrives.
+for when in ("before", "after", "dropped", "connecting"):
+    ca2 = runtime("client")
+    clients["alice"] = ca2
+    L(srv, "SP_.alice = M.player('alice', false); M.online[1] = SP_.alice; SITEMS = SITEMS or {}; SITEMS[10] = SITEMS[10] or M.item(10); M.javaSet(SP_.alice, 'Belt Left@1', SITEMS[10])")
+    L(ca2, """
+ME = M.player("alice", true); OTHER = M.player("bob", false)
+M.locals = { ME }; M.online = { ME, OTHER }
+KNIFE = M.item(10)
+if WHEN == "connecting" then ME.onlineID = -1 end
+Events.OnGameStart.fire()
+""".replace("WHEN", repr(when)))
+    if when == "connecting":
+        L(ca2, "ME:setAttachedItem('Belt Left', KNIFE)")
+        check(not any(m.command == "hello" for m in ca2.eval("M.out").values()), "MP relog (no online ID yet): no request before the server knows the player")
+        pump()
+        L(ca2, "M.now = M.now + 100; Events.OnTick.fire()")
+        check(not any(m.command == "hello" for m in ca2.eval("M.out").values()), "MP relog (no online ID yet): still waiting")
+        L(ca2, "ME.onlineID = 3; M.now = M.now + 100; Events.OnTick.fire()")
+        pump()
+    elif when == "dropped":
+        DROP_HELLO[0] = 1
+        L(ca2, "ME:setAttachedItem('Belt Left', KNIFE)")
+        pump()
+        check(ca2.eval("M.locs(ME)") == "Belt Left=10", "MP relog (first request dropped): knife on the base until the answer comes")
+        L(ca2, "M.now = M.now + 3000; Events.OnTick.fire()")
+        pump()
+        L(ca2, "M.now = M.now + 2000; Events.OnTick.fire()")
+        pump()
+    elif when == "before":
+        L(ca2, "ME:setAttachedItem('Belt Left', KNIFE)")
+        pump()
+    else:
+        pump()
+        L(ca2, "if not ME:getAttachedItem('Belt Left') then ME:setAttachedItem('Belt Left', KNIFE) end")
+        pump()
+    check(ca2.eval("M.locs(ME)") == "Belt Left@1=10", f"MP relog (hotbar {when} data): alice's knife back on her copy: " + ca2.eval("M.locs(ME)"))
+    check(srv.eval("M.locs(SP_.alice)") == "Belt Left@1=10", f"MP relog (hotbar {when} data): server keeps her copy: " + srv.eval("M.locs(SP_.alice)"))
+    check(cb.eval("M.locs(OTHER)") == "Belt Left@1=10", f"MP relog (hotbar {when} data): bob still sees her copy: " + cb.eval("M.locs(OTHER)"))
+    check(abs(ca2.eval("M.female.byId['belt_left@1'] and M.female.byId['belt_left@1'].off.X or -1") - 0.5) < 1e-6,
+          f"MP relog (hotbar {when} data): alice's game has her offset again")
+    check(len(list(ca2.eval("M.errors").values())) == 0, f"MP relog (hotbar {when} data): no errors")
+ca = ca2
 # Reset all on alice.
 L(ca, "TienAttachmentPositions.Client.ResetAll(ME)")
 pump()
 check(ca.eval("M.locs(ME)") == "Belt Left=10", "MP: reset all moves alice's knife back")
 check(cb.eval("M.locs(OTHER)") == "Belt Left=10", "MP: bob sees it back on the base")
 for name, rt in (("alice", ca), ("bob", cb), ("carol", cc), ("server", srv)):
-    logs = [l for l in rt.eval("M.logs").values() if "model scripts with points" not in l]
+    logs = [l for l in rt.eval("M.logs").values() if not l.startswith("[TienAttachmentPositions] ")]
     check(len(logs) == 0, f"MP: nothing logged on {name}: {logs!r}")
 
 print("\n%d failure(s)" % len(FAILS))

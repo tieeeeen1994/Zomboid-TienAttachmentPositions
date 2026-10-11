@@ -8,8 +8,36 @@ Client.seq = 0
 Client.localSeq = {}
 Client.pending = {}
 Client.SEND_MS = 150
+Client.CHECK_MS = 2000
 
 local lastSend = 0
+local lastCheck = 0
+local helloAt, helloTries = nil, 0
+local helloWait = false
+Client.HELLO_MS = 3000
+Client.HELLO_TRIES = 20
+
+local function sayHello()
+    local player = getSpecificPlayer(0)
+    if not player then return end
+    helloTries = helloTries + 1
+    helloAt = getTimestampMs()
+    print("[TienAttachmentPositions] " .. Core.VERSION .. " asking the server for positions (request " .. helloTries .. ")")
+    Core.ToServer(player, "hello", { v = Core.VERSION })
+end
+
+local function tryHello()
+    local player = getSpecificPlayer(0)
+    if not player or (isClient() and player:getOnlineID() < 0) then return end
+    helloWait = false
+    sayHello()
+end
+
+local function count(t)
+    local n = 0
+    for _ in pairs(t or {}) do n = n + 1 end
+    return n
+end
 
 local function isLocalUser(user)
     for i = 0, getNumActivePlayers() - 1 do
@@ -34,9 +62,15 @@ end
 function Client.Handle(command, args)
     args = args or {}
     if command == "all" then
+        helloAt = nil
+        helloWait = false
         Core.ids = args.ids or {}
         Core.reg = args.reg or {}
         Core.pts = args.pts or {}
+        local me = getSpecificPlayer(0)
+        local mine = me and Core.IdOf(me)
+        print("[TienAttachmentPositions] positions from the server: " .. count(Core.ids) .. " players, yours: "
+            .. (mine and count(Core.pts[mine]) or 0) .. " spots")
         Core.RegisterAll()
         refresh(nil)
         if Client.window then Client.window:reload() end
@@ -95,8 +129,25 @@ function Client.ResetAll(player)
 end
 
 local function onTick()
+    local now = getTimestampMs()
+    if helloWait then tryHello() end
+    if helloAt and now - helloAt >= Client.HELLO_MS then
+        if helloTries < Client.HELLO_TRIES then
+            sayHello()
+        else
+            helloAt = nil
+            print("[TienAttachmentPositions] the server never sent the positions (" .. helloTries .. " requests)")
+        end
+    end
+    if now - lastCheck >= Client.CHECK_MS then
+        lastCheck = now
+        for i = 0, getNumActivePlayers() - 1 do
+            local player = getSpecificPlayer(i)
+            if player and Core.IdOf(player) then Core.Normalize(player) end
+        end
+    end
     for _ in pairs(Client.pending) do
-        if getTimestampMs() - lastSend >= Client.SEND_MS then Client.Flush() end
+        if now - lastSend >= Client.SEND_MS then Client.Flush() end
         return
     end
 end
@@ -165,8 +216,10 @@ end
 local function onGameStart()
     quietPlysken()
     Core.ResetWorld()
-    local player = getSpecificPlayer(0)
-    if player then Core.ToServer(player, "hello", {}) end
+    helloTries = 0
+    helloAt = nil
+    helloWait = true
+    tryHello()
 end
 
 quietPlysken()

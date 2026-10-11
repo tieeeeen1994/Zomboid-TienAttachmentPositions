@@ -81,6 +81,20 @@ throws there; loading skips it instead). So:
   players before `all` arrived.
 - After every `all` / `pt`, each local player is normalized (`Core.Normalize`): items moved to the copy or back to
   the base. That also fixes the owner's own items, which its client skipped on load (data arrives after the player).
+  The client also normalizes its local players every 2 s (`Client.CHECK_MS`, once its own id is known).
+- The first `hello` waits until `getSpecificPlayer(0):getOnlineID() >= 0` (checked at `OnGameStart`, then every
+  tick; single player sends at once). A client fires `OnGameStart` before `sendPlayerConnect`, so a command sent there
+  reaches a server with no player on that connection and is dropped (`receiveClientCommand: player is null`). With
+  0.1.4 on the dedicated server (2026-10-11) request 1, sent at `OnGameStart` (frame 0), never got an answer in two
+  relogs; request 2, 3 s later, was answered within 1.5 s, so positions came back about 4.5 s after joining.
+  `hello` is still repeated every 3 s (`Client.HELLO_MS`, up to 20 times) until `all` arrives.
+- Log lines (all `[TienAttachmentPositions] ...`; the ones marked * start with `Core.VERSION`, which must match
+  mod.info, so the log shows which copy each side runs): server `loaded the positions of N players`* (world init) and
+  `sending positions to <user> (their spots: N, their version: V)`* (hello); client `asking the server for positions
+  (request N)`*, `model scripts with points: N, bodies: 2, body
+  points: M` (first index build per world), `positions from the server: N players, yours: K spots` (all), and the
+  first 20 moves per session as `<user>: <location> -> <location>` (a pair repeating every 2 s = something keeps
+  putting the item back on the base location), `the server never sent the positions (N requests)`.
 
 ### Protocol (module `TienAttachmentPositions`)
 
@@ -120,7 +134,7 @@ and moved a spot for every character on that screen, which would make players lo
 - `server/TienAttachmentPositions_Server.lua`: store, `OnInitGlobalModData` registration (before players load, so
   saved copy locations stay attached on the server), command handler.
 - `client/TienAttachmentPositions_Client.lua`: command handler, local edits, context menu (`OnFillInventoryObjectContextMenu`,
-  which the hotbar's right-click menu fires too), Plysken switch-off, `hello` on `OnGameStart`.
+  which the hotbar's right-click menu fires too), Plysken switch-off, `hello` once the online ID is known.
 - `client/TienAttachmentPositions_Window.lua`: the window. Everything is measured from the font
   (`getFontHeight`, `MeasureStringX`): label column = widest label, value column = "-180.000", sliders 12 font heights
   (shrunk to fit the screen width, at least 100), heading and note word-wrapped, buttons sized to their text and

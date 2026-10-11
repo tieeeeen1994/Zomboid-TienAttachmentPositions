@@ -18,6 +18,9 @@ local function load()
     Core.ids, Core.reg, Core.pts = data.ids, data.reg, data.pts
     Core.ResetWorld()
     Core.RegisterAll()
+    local players = 0
+    for _ in pairs(data.ids) do players = players + 1 end
+    print("[TienAttachmentPositions] " .. Core.VERSION .. " loaded the positions of " .. players .. " players")
 end
 
 local function idFor(user)
@@ -55,6 +58,11 @@ function Server.Handle(player, command, args)
     if not user or user == "" then return end
 
     if command == "hello" then
+        local ns = data.ids[user]
+        local spots = 0
+        for _ in pairs(ns and data.pts[ns] or {}) do spots = spots + 1 end
+        print("[TienAttachmentPositions] " .. Core.VERSION .. " sending positions to " .. user .. " (their spots: " .. spots
+            .. ", their version: " .. tostring(args.v) .. ")")
         Core.ToClient(player, "all", { ids = data.ids, reg = data.reg, pts = data.pts })
         if isServer() then
             local online = getOnlinePlayers()
