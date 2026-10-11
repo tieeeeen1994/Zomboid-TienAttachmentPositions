@@ -69,16 +69,16 @@ local function point(ms, id, bone, o, r, s)
     ms:addAttachment(a)
 end
 
-M.female = modelScript("Base.FemaleBody", false)
-M.male = modelScript("Base.MaleBody", false)
-M.knifeModel = modelScript("Base.Knife", true)
+M.female = modelScript("FemaleBody", true)
+M.male = modelScript("MaleBody", true)
+M.knifeModel = modelScript("Knife", true)
 point(M.female, "belt_left", "Bip01_Pelvis", { 0.1, 0.2, 0.3 }, { 10, 20, 30 })
 point(M.male, "belt_left", "Bip01_Pelvis", { 0.11, 0.21, 0.31 }, { 11, 21, 31 })
 point(M.female, "ShoulderHolster", "Bip01_Spine", { 0, 0, 0 }, { 0, 0, 0 })
 point(M.female, "Alicepack_ulmask", "Bip01_Spine", { 0.5, 0, 0 }, { 0, 90, 0 })
 point(M.knifeModel, "belt_left", nil, { 0.01, 0.02, 0.03 }, { 1, 2, 3 }, 0.5)
 local scripts = jlist({ M.female, M.male, M.knifeModel })
-getScriptManager = function() return { getAllModelScripts = function() return scripts end } end
+getScriptManager = function() return { getAllModelScripts = function() return scripts end, getModelScript = function(_, n) for _, s in ipairs(scripts.t) do if s.name == n then return s end end return nil end } end
 
 local function location(id)
     local l = { id = id }

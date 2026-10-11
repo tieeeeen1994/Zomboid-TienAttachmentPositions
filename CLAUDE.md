@@ -25,10 +25,17 @@ everyone in `GameCharacterAttachedItemPacket`. So each player who adjusts a poin
 - id `ns` per username (server-assigned "1", "2"...; usernames are forename+surname in single player, so per character
   there).
 - point copy `<point>@<ns>` on every model script that has the point (`ScriptManager:getAllModelScripts()`, indexed
-  once per world): animated scripts (bodies) get factory + the player's delta (offset added, rotation added in degrees,
-  scale multiplied); static scripts (item models) get an unchanged copy, because `addStatic(parent, model, name, name)`
+  once per world): body scripts get factory + the player's delta (offset added, rotation added in degrees, scale
+  multiplied); every other script (item models) gets an unchanged copy, because `addStatic(parent, model, name, name)`
   also looks up the item model's **own** attachment of that name (Plysken's masks and tents fine-tune themselves that
   way), so without it those items would lose their own offset on a copy.
+- A body script is recognised **by name** (`Core.IsBody`): `FemaleBody`, `MaleBody`, plus whatever
+  `chr:getHumanVisual():getModelScript()` returns for a player seen (`HumanVisual.getModelScript`: `forceModelScript`
+  or FemaleBody / MaleBody by sex; `Core.NoteBody`, which re-applies every copy when it learns a new one). Never by
+  `ModelScript:isStatic()`: model scripts load with `ResetExisting`, so every further `model FemaleBody` block (Plysken,
+  KATTAJ1 and other attachment mods add their points that way) calls `reset()` first, which sets `isStatic` back to
+  true (attachments survive). With Plysken loaded the bodies report static; 0.1.0 checked the flag, so every spot was
+  greyed out ("no point on the model") on the first server test, 2026-10-11.
 - location copy `<location>@<ns>` for **every** location whose attachment name is the point (vanilla has several
   locations per point), pointing at the point copy.
 

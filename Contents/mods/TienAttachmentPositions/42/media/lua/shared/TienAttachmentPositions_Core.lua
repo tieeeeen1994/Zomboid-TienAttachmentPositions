@@ -150,9 +150,26 @@ function Core.ScriptsWith(point)
     return scriptIndex[point] or {}
 end
 
+local bodies = { FemaleBody = true, MaleBody = true }
+
+function Core.NoteBody(chr)
+    local visual = chr and chr.getHumanVisual and chr:getHumanVisual()
+    local script = visual and visual:getModelScript()
+    local name = script and script:getName()
+    if name and not bodies[name] then
+        bodies[name] = true
+        return true
+    end
+    return false
+end
+
+function Core.IsBody(script)
+    return bodies[script:getName()] == true
+end
+
 function Core.HasBodyPoint(point)
     for _, script in ipairs(Core.ScriptsWith(point)) do
-        if not script:isStatic() then return true end
+        if Core.IsBody(script) then return true end
     end
     return false
 end
@@ -168,7 +185,7 @@ local function factoryOf(script, point, attachment)
     if f then return f end
     local ox, oy, oz = vec(attachment:getOffset())
     local rx, ry, rz = vec(attachment:getRotate())
-    local par = not script:isStatic() and PAR_AttachCalibrate and PAR_AttachCalibrate.factoryPoints
+    local par = Core.IsBody(script) and PAR_AttachCalibrate and PAR_AttachCalibrate.factoryPoints
         and PAR_AttachCalibrate.factoryPoints[point]
     if par and par.off and par.rot then
         ox, oy, oz = par.off[1], par.off[2], par.off[3]
@@ -196,7 +213,7 @@ function Core.ApplyValues(ns, point)
                 if base:getCanAttach() then clone:setCanAttach(base:getCanAttach()) end
                 script:addAttachment(clone)
             end
-            if v and not script:isStatic() then
+            if v and Core.IsBody(script) then
                 clone:getOffset():set(f[1] + v.ox, f[2] + v.oy, f[3] + v.oz)
                 clone:getRotate():set(f[4] + v.rx, f[5] + v.ry, f[6] + v.rz)
                 clone:setScale(f[7] * v.s)
@@ -223,6 +240,14 @@ function Core.Register(ns, point)
     Core.locs[ns][point] = true
     Core.ApplyValues(ns, point)
     return true
+end
+
+function Core.ReapplyAll()
+    for ns, points in pairs(Core.locs) do
+        for point in pairs(points) do
+            Core.ApplyValues(ns, point)
+        end
+    end
 end
 
 function Core.RegisterAll()

@@ -93,6 +93,8 @@ check(sp.eval("M.moddata.TienAttachmentPositions.pts['1'].belt_left") is None, "
 check(sp.eval("M.moddata.TienAttachmentPositions.reg['1'].belt_left") is True, "SP: registration is kept after reset")
 check(sp.eval("TienAttachmentPositions.Adjustable('ShoulderHolster')") is False, "SP: clothing-tied point not adjustable")
 check(sp.eval("TienAttachmentPositions.Adjustable('belt_left')") is True, "SP: normal point adjustable")
+check(sp.eval("TienAttachmentPositions.HasBodyPoint('belt_left')") is True, "SP: body found by name although its script says static (merged mod blocks reset the flag)")
+check(sp.eval("TienAttachmentPositions.HasBodyPoint('no_such_point')") is False, "SP: unknown point has no body point")
 L(sp, """
 local C = TienAttachmentPositions.Client
 C.Edit(P, "Alicepack_ulmask", { ox = 9, oy = 0, oz = 0, rx = 999, ry = 0, rz = 0, s = 50 })

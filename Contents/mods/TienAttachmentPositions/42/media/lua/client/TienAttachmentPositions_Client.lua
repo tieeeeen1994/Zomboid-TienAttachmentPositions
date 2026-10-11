@@ -20,9 +20,14 @@ local function isLocalUser(user)
 end
 
 local function refresh(user)
+    local newBody = false
+    Core.EachPlayer(function(player)
+        if Core.NoteBody(player) then newBody = true end
+    end)
+    if newBody then Core.ReapplyAll() end
     Core.EachPlayer(function(player)
         if player:isLocalPlayer() then Core.Normalize(player) end
-        if user == nil or player:getUsername() == user then player:resetModelNextFrame() end
+        if newBody or user == nil or player:getUsername() == user then player:resetModelNextFrame() end
     end)
 end
 
@@ -133,6 +138,7 @@ local function onContextMenu(playerNum, context, items)
     local base = Core.BaseOf(loc)
     local point = Core.PointOf(base)
     if not point then return end
+    if Core.NoteBody(player) then Core.ReapplyAll() end
     local option = context:addOption(getText("IGUI_TienAttachmentPositions_Menu"), player, Client.Open, item, base, point)
     local reason
     if not Core.Adjustable(point) then
