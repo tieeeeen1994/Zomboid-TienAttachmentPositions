@@ -2,12 +2,13 @@ TienAttachmentPositions = TienAttachmentPositions or {}
 local Core = TienAttachmentPositions
 
 Core.MODULE = "TienAttachmentPositions"
-Core.VERSION = "0.1.5"
+Core.VERSION = "0.1.7"
 Core.MOVE = 0.5
 Core.TURN = 180
 Core.SIZE_MIN = 0.25
 Core.SIZE_MAX = 3
 Core.MAX_POINTS = 300
+Core.MAX_SLOT_POINTS = 64
 Core.FIELDS = { "ox", "oy", "oz", "rx", "ry", "rz", "s" }
 
 Core.ids = Core.ids or {}
@@ -233,6 +234,45 @@ local function factoryOf(script, point, attachment)
     return f
 end
 
+local RAD = 3.14159265358979 / 180
+
+local function rotXYZ(x, y, z)
+    local ca, sa = math.cos(x * RAD), math.sin(x * RAD)
+    local cb, sb = math.cos(y * RAD), math.sin(y * RAD)
+    local cc, sc = math.cos(z * RAD), math.sin(z * RAD)
+    return {
+        { cb * cc, -cb * sc, sb },
+        { ca * sc + sa * sb * cc, ca * cc - sa * sb * sc, -sa * cb },
+        { sa * sc - ca * sb * cc, sa * cc + ca * sb * sc, ca * cb },
+    }
+end
+
+local function mul(a, b)
+    local m = {}
+    for i = 1, 3 do
+        m[i] = {}
+        for j = 1, 3 do
+            m[i][j] = a[i][1] * b[1][j] + a[i][2] * b[2][j] + a[i][3] * b[3][j]
+        end
+    end
+    return m
+end
+
+function Core.Turn(fx, fy, fz, rx, ry, rz)
+    if rx == 0 and ry == 0 and rz == 0 then return fx, fy, fz end
+    local m = mul(rotXYZ(rx, ry, rz), rotXYZ(fx, fy, fz))
+    local y = math.atan2(m[1][3], math.sqrt(m[1][1] * m[1][1] + m[1][2] * m[1][2]))
+    local x, z
+    if math.abs(m[1][3]) > 0.99999 then
+        x = math.atan2(m[3][2], m[2][2])
+        z = 0
+    else
+        x = math.atan2(-m[2][3], m[3][3])
+        z = math.atan2(-m[1][2], m[1][1])
+    end
+    return x / RAD, y / RAD, z / RAD
+end
+
 function Core.ApplyValues(ns, point)
     if isServer() then return end
     local v = Core.ValuesFor(ns, point)
@@ -252,7 +292,7 @@ function Core.ApplyValues(ns, point)
             end
             if v and Core.IsBody(script) then
                 clone:getOffset():set(f[1] + v.ox, f[2] + v.oy, f[3] + v.oz)
-                clone:getRotate():set(f[4] + v.rx, f[5] + v.ry, f[6] + v.rz)
+                clone:getRotate():set(Core.Turn(f[4], f[5], f[6], v.rx, v.ry, v.rz))
                 clone:setScale(f[7] * v.s)
             else
                 clone:getOffset():set(f[1], f[2], f[3])

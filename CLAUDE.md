@@ -25,10 +25,18 @@ everyone in `GameCharacterAttachedItemPacket`. So each player who adjusts a poin
 - id `ns` per username (server-assigned "1", "2"...; usernames are forename+surname in single player, so per character
   there).
 - point copy `<point>@<ns>` on every model script that has the point (`ScriptManager:getAllModelScripts()`, indexed
-  once per world): body scripts get factory + the player's delta (offset added, rotation added in degrees, scale
+  once per world): body scripts get factory + the player's delta (offset added, turn composed as below, scale
   multiplied); every other script (item models) gets an unchanged copy, because `addStatic(parent, model, name, name)`
   also looks up the item model's **own** attachment of that name (Plysken's masks and tents fine-tune themselves that
   way), so without it those items would lose their own offset on a copy.
+- Turning (`Core.Turn`, 0.1.6): the game turns a point with `rotateXYZ(x, y, z)` = Rx · Ry · Rz, X first and each
+  later axis in the already turned frame. 0.1.5 and earlier added the slider degrees to those angles, so on a point
+  whose own Y is ±90 Turn X and Turn Z spun around the same line (gimbal lock; reported 2026-10-12). 193 of the 895
+  body points in the server's mods are within 15° of that (Plysken's bag spots, HavenFall's flashlight spots,
+  KATTAJ1's belts). Now the player's turn is its own Rx · Ry · Rz around the **bone's** axes (the same axes Move X / Y /
+  Z use), multiplied in front of the point's own turn, and the product is decomposed back into X, Y, Z for
+  `getRotate():set` (Y from `atan2` + `sqrt`, as vanilla never uses `math.asin`). No turn = the point's own angles
+  exactly. Saved turns from 0.1.5 and earlier are read with the new meaning.
 - A body script is recognised **as an object** (`Core.IsBody`, a table keyed by the ModelScript):
   `getScriptManager():getModelScript("FemaleBody")` / `("MaleBody")` (looked up by the bucket's map key), plus
   whatever `chr:getHumanVisual():getModelScript()` returns for a player seen (`HumanVisual.getModelScript`:
@@ -87,7 +95,10 @@ throws there; loading skips it instead). So:
   reaches a server with no player on that connection and is dropped (`receiveClientCommand: player is null`). With
   0.1.4 on the dedicated server (2026-10-11) request 1, sent at `OnGameStart` (frame 0), never got an answer in two
   relogs; request 2, 3 s later, was answered within 1.5 s, so positions came back about 4.5 s after joining.
-  `hello` is still repeated every 3 s (`Client.HELLO_MS`, up to 20 times) until `all` arrives.
+  `hello` is still repeated every second (`Client.HELLO_MS`, up to 20 times) until `all` arrives. The online ID wait
+  did not help: in the 0.1.6 log (2026-10-12) the ID was already set at `OnGameStart`, request 1 (frame 0) was still
+  lost and request 2 (3.5 s later at the old 3 s interval) was answered within two frames, so the retry is what
+  works and it was shortened from 3 s to 1 s in 0.1.7.
 - Log lines (all `[TienAttachmentPositions] ...`; the ones marked * start with `Core.VERSION`, which must match
   mod.info, so the log shows which copy each side runs): server `loaded the positions of N players`* (world init) and
   `sending positions to <user> (their spots: N, their version: V)`* (hello); client `asking the server for positions
@@ -98,21 +109,38 @@ throws there; loading skips it instead). So:
 
 ### Protocol (module `TienAttachmentPositions`)
 
-Client → server: `hello`, `set {p, v, seq}` (v nil or identity = reset), `resetAll`. Server → client: `all {ids, reg,
-pts}`, `pt {u, n, p, v, seq}` (to everyone), `resend` (to one player). Single player calls the other side's handler
+Client → server: `hello`, `set {ps, v, seq}` (a list of points that all take `v`; nil or identity = reset; a single
+`p` is still accepted), `resetAll`. Server → client: `all {ids, reg, pts}`, `pt {u, n, ps, v, seq}` (to everyone, one
+per `set`, so a slot of 15 points is one packet each way), `resend` (to one player). Single player calls the other side's handler
 directly (`Core.ToServer` / `ToClient`; `sendServerCommand` does nothing there).
 
 Server checks: the point must be a known attachment name of a base location (from the group), not `head_hat` /
 `bowtie` (Java never sends those), no `@` or `:`, not a body location name (`Core.Adjustable`), at most 300 points a
-player; values clamped (move ±0.5, turn ±180, size 0.25-3, rounded to 0.001).
+player and 64 per `set` (`Core.MAX_SLOT_POINTS`); values clamped (move ±0.5, turn ±180, size 0.25-3, rounded to
+0.001).
 
 Store: global mod data `TienAttachmentPositions` = `{ ids = {user = ns}, next, reg = {ns = {point = true}},
 pts = {ns = {point = {ox, oy, oz, rx, ry, rz, s}}} }` (string keys everywhere).
 
+### Per slot (0.1.7)
+
+Values are stored per point, but the window edits a **slot**: `Client.SlotPoints(item, point)` = the item's own point,
+then every adjustable body point of the locations in its hotbar slot's definition (`item:getAttachedSlotType()` →
+the `ISHotbarAttachDefinition` entry of that `type`, its `attachments` values, plus the `replacement` values of every
+`ISHotbarAttachDefinition.replacements` entry with the same `name`: vanilla's Back slot swaps to the "... with Bag"
+locations while a bag is worn). Each item type in a slot hangs from its own location and point (Back: a bat on "Big
+Weapon On Back", a rifle on "Rifle On Back"), so per point a weapon attached later started at its factory spot
+(reported 2026-10-12). Since turns are around the bone's axes (0.1.6), one move / turn / size means the same for every
+item in the slot. The attach wrapper cannot know the slot itself: vanilla sets `setAttachedSlotType` **after**
+`setAttachedItem` (`ISHotbar:attachItem` ~376, `ISAttachItemHotbar:complete` ~67), so grouping happens when editing
+and the per-point storage, copies and protocol stay as they were. The definitions are client Lua
+(`client/Hotbar/ISHotbarAttachDefinition.lua`, plus slot mods' client files), so the server only checks each point.
+A point shared by two slots follows whichever slot was edited last. The window shows the item's own point's values.
+
 ### Live editing
 
 The window sends at most every 150 ms (`Client.SEND_MS`, flushed on close) and applies each slider move to its own
-copy at once. Each edit has a sequence number per user and point; an echo older than the latest local edit is
+copy at once. Each edit has a sequence number per user and point (one number for all the points of a slot edit); an echo older than the latest local edit is
 registered but its values are ignored, so the slider is never pulled back while dragging.
 
 ### Clothing-hidden points

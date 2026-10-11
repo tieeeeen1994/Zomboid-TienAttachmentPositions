@@ -2,6 +2,7 @@
 local mode = ...
 TAP_EN = TAP_EN or "../../Contents/mods/TienAttachmentPositions/42/media/lua/shared/Translate/EN/IG_UI.json"
 M = { mode = mode, out = {}, packets = {}, errors = {}, now = 0, locals = {}, online = {}, logs = {} }
+math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 
 local realPrint = print
 print = function(...) local t = {} for i = 1, select("#", ...) do t[#t + 1] = tostring(select(i, ...)) end M.logs[#M.logs + 1] = table.concat(t, " ") end
@@ -79,6 +80,9 @@ point(M.female, "belt_left", "Bip01_Pelvis", { 0.1, 0.2, 0.3 }, { 10, 20, 30 })
 point(M.male, "belt_left", "Bip01_Pelvis", { 0.11, 0.21, 0.31 }, { 11, 21, 31 })
 point(M.female, "ShoulderHolster", "Bip01_Spine", { 0, 0, 0 }, { 0, 0, 0 })
 point(M.female, "Alicepack_ulmask", "Bip01_Spine", { 0.5, 0, 0 }, { 0, 90, 0 })
+point(M.female, "walkie_belt_left", "Bip01_Pelvis", { 0.2, 0, 0 }, { 0, 0, 0 })
+point(M.female, "rifle_back", "Bip01_Spine", { 0, 0.3, 0 }, { 0, 0, 0 })
+point(M.female, "rifle_back_bag", "Bip01_Spine", { 0, 0.4, 0 }, { 0, 0, 0 })
 point(M.knifeModel, "belt_left", nil, { 0.01, 0.02, 0.03 }, { 1, 2, 3 }, 0.5)
 local scripts = jlist({ M.female, M.male, M.knifeModel })
 getScriptManager = function() return { getAllModelScripts = function() return scripts end, getModelScript = function(_, n) for _, s in ipairs(scripts.t) do if s.key == n then return s end end return nil end } end
@@ -102,6 +106,15 @@ group:getOrCreateLocation("Belt Left Upside"):setAttachmentName("belt_left")
 group:getOrCreateLocation("Holster Shoulder"):setAttachmentName("ShoulderHolster")
 group:getOrCreateLocation("bowtie"):setAttachmentName("bowtie")
 group:getOrCreateLocation("AlicepackulMask"):setAttachmentName("Alicepack_ulmask")
+group:getOrCreateLocation("Walkie Belt Left"):setAttachmentName("walkie_belt_left")
+group:getOrCreateLocation("Rifle On Back"):setAttachmentName("rifle_back")
+group:getOrCreateLocation("Rifle On Back with Bag"):setAttachmentName("rifle_back_bag")
+ISHotbarAttachDefinition = {
+    { type = "SmallBeltLeft", name = "Belt Left", attachments = { Knife = "Belt Left Upside", Hammer = "Belt Left",
+        Walkie = "Walkie Belt Left", Odd = "Holster Shoulder", Gone = "No Such Location" } },
+    { type = "Back", name = "Back", attachments = { Rifle = "Rifle On Back" } },
+    replacements = { { type = "Bag", name = "Back", replacement = { Rifle = "Rifle On Back with Bag", Guitar = "null" } } },
+}
 
 ResourceLocation = { of = function(id) return { path = id:lower() } end }
 ItemBodyLocation = { get = function(rl) if rl.path == "shoulderholster" then return {} end return nil end }
@@ -150,7 +163,10 @@ function M.player(user, isLocal)
     local p = { user = user, localP = isLocal, ai = attachedItems(), resets = 0 }
     return setmetatable(p, { __index = function(_, k) return index[k] or pmethods[k] end })
 end
-function M.item(id) return { isItem = true, id = id, getDisplayName = function() return "Item " .. id end } end
+function M.item(id, slot)
+    return { isItem = true, id = id, getDisplayName = function() return "Item " .. id end,
+        getAttachedSlotType = function() return slot end }
+end
 function M.locs(p) local t = {} for _, e in ipairs(p.ai.items) do t[#t + 1] = e.loc .. "=" .. tostring(e.item and e.item.id) end table.sort(t) return table.concat(t, ",") end
 
 instanceof = function(o, cls)

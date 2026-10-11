@@ -84,12 +84,13 @@ local function layout(heading)
     return L
 end
 
-function Window:new(player, point, heading)
+function Window:new(player, points, heading)
     local L = layout(heading)
     local o = ISCollapsableWindow.new(self, 0, 0, L.width, 100)
     o.L = L
     o.player = player
-    o.point = point
+    o.points = points
+    o.point = points[1]
     o.title = getText("IGUI_TienAttachmentPositions_Title")
     o.resizable = false
     local th = o:titleBarHeight()
@@ -184,12 +185,12 @@ function Window:onSlider(value, slider)
     if not row then return end
     self.v[slider.key] = value
     row.value:setName(string.format(row.fmt, value))
-    Core.Client.Edit(self.player, self.point, self.v)
+    Core.Client.Edit(self.player, self.points, self.v)
 end
 
 function Window:onReset()
     self:show(Core.Identity())
-    Core.Client.Edit(self.player, self.point, self.v)
+    Core.Client.Edit(self.player, self.points, self.v)
 end
 
 function Window:onResetAll()

@@ -14,7 +14,7 @@ local lastSend = 0
 local lastCheck = 0
 local helloAt, helloTries = nil, 0
 local helloWait = false
-Client.HELLO_MS = 3000
+Client.HELLO_MS = 1000
 Client.HELLO_TRIES = 20
 
 local function sayHello()
@@ -75,22 +75,27 @@ function Client.Handle(command, args)
         refresh(nil)
         if Client.window then Client.window:reload() end
     elseif command == "pt" then
-        local user, ns, point = args.u, args.n, args.p
-        if type(user) ~= "string" or type(ns) ~= "string" or type(point) ~= "string" then return end
+        local user, ns = args.u, args.n
+        if type(user) ~= "string" or type(ns) ~= "string" then return end
+        local points = type(args.ps) == "table" and args.ps or { args.p }
         Core.ids[user] = ns
         Core.reg[ns] = Core.reg[ns] or {}
-        Core.reg[ns][point] = true
-        local key = user .. "|" .. point
-        local stale = args.seq and Client.localSeq[key] and args.seq < Client.localSeq[key]
-        if not stale then
-            Core.pts[ns] = Core.pts[ns] or {}
-            Core.pts[ns][point] = args.v
+        local reload = false
+        for _, point in pairs(points) do
+            if type(point) == "string" then
+                Core.reg[ns][point] = true
+                local key = user .. "|" .. point
+                local stale = args.seq and Client.localSeq[key] and args.seq < Client.localSeq[key]
+                if not stale then
+                    Core.pts[ns] = Core.pts[ns] or {}
+                    Core.pts[ns][point] = args.v
+                    if Client.window and Client.window.point == point then reload = true end
+                end
+                Core.Register(ns, point)
+            end
         end
-        Core.Register(ns, point)
         refresh(user)
-        if not stale and Client.window and Client.window.point == point and isLocalUser(user) then
-            Client.window:reload()
-        end
+        if reload and isLocalUser(user) then Client.window:reload() end
     elseif command == "resend" then
         for i = 0, getNumActivePlayers() - 1 do
             local player = getSpecificPlayer(i)
@@ -99,28 +104,75 @@ function Client.Handle(command, args)
     end
 end
 
-function Client.Edit(player, point, v)
+function Client.Edit(player, points, v)
+    if type(points) == "string" then points = { points } end
     local user = player:getUsername()
     Client.seq = Client.seq + 1
-    Client.localSeq[user .. "|" .. point] = Client.seq
     local ns = Core.IdOf(player)
-    if ns and Core.IsRegistered(ns, point) then
-        Core.pts[ns] = Core.pts[ns] or {}
-        Core.pts[ns][point] = Core.Clean(v)
-        Core.ApplyValues(ns, point)
+    local changed = false
+    for _, point in ipairs(points) do
+        Client.localSeq[user .. "|" .. point] = Client.seq
+        if ns and Core.IsRegistered(ns, point) then
+            Core.pts[ns] = Core.pts[ns] or {}
+            Core.pts[ns][point] = Core.Clean(v)
+            Core.ApplyValues(ns, point)
+            changed = true
+        end
+    end
+    if changed then
         Core.Normalize(player)
         player:resetModelNextFrame()
     end
-    Client.pending[user .. "|" .. point] = { player = player, point = point, v = v, seq = Client.seq }
+    local copy = {}
+    for _, key in ipairs(Core.FIELDS) do copy[key] = v[key] end
+    Client.pending[user .. "|" .. table.concat(points, "|")] = { player = player, points = points, v = copy, seq = Client.seq }
 end
 
 function Client.Flush()
     local pending = Client.pending
     Client.pending = {}
     for _, p in pairs(pending) do
-        Core.ToServer(p.player, "set", { p = p.point, v = p.v, seq = p.seq })
+        Core.ToServer(p.player, "set", { ps = p.points, v = p.v, seq = p.seq })
     end
     lastSend = getTimestampMs()
+end
+
+local function slotLocations(slotType)
+    local list = {}
+    local defs = ISHotbarAttachDefinition
+    if type(slotType) ~= "string" or type(defs) ~= "table" then return list end
+    local def
+    for _, d in ipairs(defs) do
+        if type(d) == "table" and d.type == slotType then def = d break end
+    end
+    if not def then return list end
+    for _, loc in pairs(def.attachments or {}) do
+        if type(loc) == "string" then list[#list + 1] = loc end
+    end
+    for _, r in ipairs(type(defs.replacements) == "table" and defs.replacements or {}) do
+        if type(r) == "table" and r.name == def.name and type(r.replacement) == "table" then
+            for _, loc in pairs(r.replacement) do
+                if type(loc) == "string" and loc ~= "null" then list[#list + 1] = loc end
+            end
+        end
+    end
+    return list
+end
+
+function Client.SlotPoints(item, point)
+    local points, seen = { point }, { [point] = true }
+    local slotType = item and item.getAttachedSlotType and item:getAttachedSlotType()
+    local others = {}
+    for _, loc in ipairs(slotLocations(slotType)) do
+        local p = Core.PointOf(loc)
+        if p and not seen[p] and Core.Adjustable(p) and Core.HasBodyPoint(p) then
+            seen[p] = true
+            others[#others + 1] = p
+        end
+    end
+    table.sort(others)
+    for _, p in ipairs(others) do points[#points + 1] = p end
+    return points
 end
 
 function Client.ResetAll(player)
@@ -207,7 +259,8 @@ end
 
 function Client.Open(player, item, base, point)
     if Client.window then Client.window:close() end
-    local window = TienAttachmentPositionsWindow:new(player, point, item:getDisplayName() .. " - " .. slotName(item, base))
+    local window = TienAttachmentPositionsWindow:new(player, Client.SlotPoints(item, point),
+        item:getDisplayName() .. " - " .. slotName(item, base))
     window:initialise()
     window:addToUIManager()
     Client.window = window

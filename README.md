@@ -11,8 +11,9 @@ Move, turn and resize what hangs on your character, and every other player sees 
   everyone can set up their own look.
 - **Seen by everyone.** In multiplayer the server keeps every player's settings and sends them to everyone, so other
   players see your items where you put them. They stay after relogging, a server restart and a new character.
-- **Per spot.** A setting belongs to the spot, so everything you hang there follows it. **Reset this spot** and
-  **Reset every spot** are in the window.
+- **Per slot.** A setting belongs to the hotbar slot, so every item you hang there follows it, a different weapon you
+  put there later and the with-bag spots on the back included. **Reset this slot** and **Reset every slot** are in the
+  window.
 
 ## Notes
 

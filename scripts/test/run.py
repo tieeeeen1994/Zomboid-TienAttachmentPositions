@@ -67,8 +67,9 @@ Events.OnTick.fire()
 """)
 check(sp.eval("M.locs(P)") == "Belt Left@1=1", "SP: first edit assigns id 1 and moves the knife to its own location")
 check(sp.eval("M.group:getLocation('Belt Left Upside@1') ~= nil"), "SP: every location of the point gets a copy")
-fx, fy = sp.eval("M.female.byId['belt_left@1'].off.X"), sp.eval("M.female.byId['belt_left@1'].rot.Y")
-check(abs(fx - 0.2) < 1e-6 and abs(fy - 65) < 1e-6, "SP: body copy = base + delta (offset x 0.2, rot y 65)")
+fx = sp.eval("M.female.byId['belt_left@1'].off.X")
+rot = sp.eval("(function() local r = M.female.byId['belt_left@1'].rot; local x, y, z = TienAttachmentPositions.Turn(10, 20, 30, 0, 45, 0); return math.abs(r.X - x) + math.abs(r.Y - y) + math.abs(r.Z - z) end)()")
+check(abs(fx - 0.2) < 1e-6 and rot < 1e-4, "SP: body copy = base + delta (offset x 0.2, turned 45 around the bone's y)")
 check(abs(sp.eval("M.female.byId['belt_left@1'].scale") - 1.5) < 1e-6, "SP: body copy scale x1.5")
 check(abs(sp.eval("M.male.byId['belt_left@1'].off.X") - 0.21) < 1e-6, "SP: male body copy uses its own base")
 check(sp.eval("M.female.byId['belt_left@1'].bone") == "Bip01_Pelvis", "SP: copy keeps the bone")
@@ -285,6 +286,57 @@ check(cb.eval("M.locs(OTHER)") == "Belt Left=10", "MP: bob sees it back on the b
 for name, rt in (("alice", ca), ("bob", cb), ("carol", cc), ("server", srv)):
     logs = [l for l in rt.eval("M.logs").values() if not l.startswith("[TienAttachmentPositions] ")]
     check(len(logs) == 0, f"MP: nothing logged on {name}: {logs!r}")
+
+# Per slot: one setting covers every point the item's hotbar slot can use, bag replacements included.
+sl = runtime("sp")
+L(sl, """
+P = M.player("Dee Jones", true); M.locals = { P }
+Events.OnInitGlobalModData.fire(true)
+Events.OnGameStart.fire()
+local C = TienAttachmentPositions.Client
+KNIFE = M.item(1, "SmallBeltLeft")
+P:setAttachedItem("Belt Left Upside", KNIFE)
+PTS = C.SlotPoints(KNIFE, "belt_left")
+C.Edit(P, PTS, { ox = 0.1, oy = 0, oz = 0, rx = 0, ry = 0, rz = 0, s = 1 })
+M.now = 1000; Events.OnTick.fire()
+RIFLE = M.item(3, "Back")
+BACK = C.SlotPoints(RIFLE, "rifle_back")
+""")
+check(sl.eval("table.concat(PTS, ',')") == "belt_left,walkie_belt_left",
+      "slot: the belt's points, without the clothing-hidden one or a missing location: " + sl.eval("table.concat(PTS, ',')"))
+check(sl.eval("table.concat(BACK, ',')") == "rifle_back,rifle_back_bag", "slot: Back includes the with-bag points")
+check(sl.eval("M.locs(P)") == "Belt Left Upside@1=1", "slot: the knife is on the player's copy")
+L(sl, "P:setAttachedItem('Belt Left Upside', nil); WALKIE = M.item(2, 'SmallBeltLeft'); P:setAttachedItem('Walkie Belt Left', WALKIE)")
+check(sl.eval("M.locs(P)") == "Walkie Belt Left@1=2", "slot: a walkie attached later goes on the player's copy: " + sl.eval("M.locs(P)"))
+check(abs(sl.eval("M.female.byId['walkie_belt_left@1'].off.X") - 0.3) < 1e-6, "slot: the walkie's point got the same move")
+check(len(list(sl.eval("M.errors").values())) == 0, "slot: no errors")
+
+# Turning: the player's turn is applied around the bone's axes on top of the spot's own turn, and the result is
+# written back as the X, Y, Z angles the game feeds to rotateXYZ (X first, in the point's frame).
+import math, random
+def rxyz(x, y, z):
+    x, y, z = math.radians(x), math.radians(y), math.radians(z)
+    rx = [[1, 0, 0], [0, math.cos(x), -math.sin(x)], [0, math.sin(x), math.cos(x)]]
+    ry = [[math.cos(y), 0, math.sin(y)], [0, 1, 0], [-math.sin(y), 0, math.cos(y)]]
+    rz = [[math.cos(z), -math.sin(z), 0], [math.sin(z), math.cos(z), 0], [0, 0, 1]]
+    return mm(mm(rx, ry), rz)
+def mm(a, b): return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+def close(a, b): return max(abs(a[i][j] - b[i][j]) for i in range(3) for j in range(3)) < 1e-6
+turn = sp.eval("function(...) return TienAttachmentPositions.Turn(...) end")
+random.seed(4)
+cases = [((0, 90, 0), (10, 0, 0)), ((0, 90, 0), (0, 0, 10)), ((180, 90, -85), (15, -20, 30)), ((90, -90, 0), (0, 0, -45)),
+         ((22, -24, -80), (5, 5, 5)), ((0, 0, 0), (0, 90, 0)), ((10, 80, 0), (0, 10, 0))]
+cases += [(tuple(random.uniform(-180, 180) for _ in range(3)), tuple(random.uniform(-180, 180) for _ in range(3)))
+          for _ in range(200)]
+bad = 0
+for f, v in cases:
+    e = turn(*f, *v)
+    if not close(rxyz(*e), mm(rxyz(*v), rxyz(*f))):
+        bad += 1
+check(bad == 0, f"turn: the angles written give the bone-axis turn on top of the spot's own ({bad} of {len(cases)} wrong)")
+check(turn(22, -24, -80, 0, 0, 0) == (22, -24, -80), "turn: no turn keeps the spot's own angles exactly")
+check(not close(rxyz(*turn(0, 90, 0, 10, 0, 0)), rxyz(*turn(0, 90, 0, 0, 0, 10))),
+      "turn: X and Z differ on a spot whose own Y turn is 90")
 
 print("\n%d failure(s)" % len(FAILS))
 sys.exit(1 if FAILS else 0)

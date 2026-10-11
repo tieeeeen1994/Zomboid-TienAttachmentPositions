@@ -38,13 +38,15 @@ local function countPoints(ns)
     return n
 end
 
-local function store(user, ns, point, v, seq)
+local function store(user, ns, points, v, seq)
     data.reg[ns] = data.reg[ns] or {}
-    data.reg[ns][point] = true
     data.pts[ns] = data.pts[ns] or {}
-    data.pts[ns][point] = v
-    Core.Register(ns, point)
-    Core.ToClients("pt", { u = user, n = ns, p = point, v = v, seq = seq })
+    for _, point in ipairs(points) do
+        data.reg[ns][point] = true
+        data.pts[ns][point] = v
+        Core.Register(ns, point)
+    end
+    Core.ToClients("pt", { u = user, n = ns, ps = points, v = v, seq = seq })
 end
 
 local function validPoint(point)
@@ -75,20 +77,29 @@ function Server.Handle(player, command, args)
             end
         end
     elseif command == "set" then
-        local point = args.p
-        if not validPoint(point) then return end
-        local ns = idFor(user)
+        local asked = type(args.ps) == "table" and args.ps or { args.p }
         local v = Core.Clean(args.v)
-        if v and not (data.pts[ns] and data.pts[ns][point]) and countPoints(ns) >= Core.MAX_POINTS then return end
-        store(user, ns, point, v, tonumber(args.seq))
+        local ns = data.ids[user]
+        local have = ns and countPoints(ns) or 0
+        local points, seen = {}, {}
+        for _, point in pairs(asked) do
+            if #points >= Core.MAX_SLOT_POINTS then break end
+            if validPoint(point) and not seen[point] then
+                seen[point] = true
+                local known = ns and data.pts[ns] and data.pts[ns][point]
+                if not v or known or have < Core.MAX_POINTS then
+                    if v and not known then have = have + 1 end
+                    points[#points + 1] = point
+                end
+            end
+        end
+        if #points > 0 then store(user, idFor(user), points, v, tonumber(args.seq)) end
     elseif command == "resetAll" then
         local ns = data.ids[user]
         if not ns or not data.pts[ns] then return end
         local points = {}
         for point in pairs(data.pts[ns]) do points[#points + 1] = point end
-        for _, point in ipairs(points) do
-            store(user, ns, point, nil, tonumber(args.seq))
-        end
+        if #points > 0 then store(user, ns, points, nil, tonumber(args.seq)) end
     end
 end
 

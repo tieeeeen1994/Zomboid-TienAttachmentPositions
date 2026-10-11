@@ -1,7 +1,7 @@
 {
     "IGUI_TienAttachmentPositions_Menu": "Adjust position",
     "IGUI_TienAttachmentPositions_Title": "Attachment position",
-    "IGUI_TienAttachmentPositions_Note": "Everything you hang on this spot moves with it, and every player sees it on you. Hold Shift on the slider arrows for bigger steps.",
+    "IGUI_TienAttachmentPositions_Note": "Every item you hang in this slot moves with it, whatever its kind, and every player sees it on you. Hold Shift on the slider arrows for bigger steps.",
     "IGUI_TienAttachmentPositions_MoveX": "Move X",
     "IGUI_TienAttachmentPositions_MoveY": "Move Y",
     "IGUI_TienAttachmentPositions_MoveZ": "Move Z",
@@ -9,8 +9,8 @@
     "IGUI_TienAttachmentPositions_TurnY": "Turn Y",
     "IGUI_TienAttachmentPositions_TurnZ": "Turn Z",
     "IGUI_TienAttachmentPositions_Size": "Size",
-    "IGUI_TienAttachmentPositions_Reset": "Reset this spot",
-    "IGUI_TienAttachmentPositions_ResetAll": "Reset every spot",
+    "IGUI_TienAttachmentPositions_Reset": "Reset this slot",
+    "IGUI_TienAttachmentPositions_ResetAll": "Reset every slot",
     "IGUI_TienAttachmentPositions_Close": "Close",
     "IGUI_TienAttachmentPositions_Clothing": "This spot is hidden by some clothing, and moving it would stop that, so it stays where it is.",
     "IGUI_TienAttachmentPositions_NoPoint": "Your character's model has no point for this spot, so there is nothing to move."
