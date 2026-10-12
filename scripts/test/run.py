@@ -12,6 +12,7 @@ FILES = {
     "server": os.path.join(LUA, "server", "TienAttachmentPositions_Server.lua"),
     "client": os.path.join(LUA, "client", "TienAttachmentPositions_Client.lua"),
 }
+CLIENT_ONLY = ("client",)
 FAILS = []
 
 
@@ -26,7 +27,7 @@ def runtime(mode):
     rt.globals().TAP_EN = os.path.join(MOD, "media/lua/shared/Translate/EN/IG_UI.json")
     rt.eval("loadfile")(os.path.join(HERE, "mock.lua"))(mode)
     for name in ("core", "server", "client"):
-        if mode == "server" and name == "client":
+        if mode == "server" and name in CLIENT_ONLY:
             continue
         rt.eval("function(p) local f, e = loadfile(p) if not f then error(e) end f() end")(FILES[name])
     return rt
@@ -313,7 +314,8 @@ check(abs(sl.eval("M.female.byId['walkie_belt_left@1'].off.X") - 0.3) < 1e-6, "s
 check(len(list(sl.eval("M.errors").values())) == 0, "slot: no errors")
 
 # The window: sliders only preview on the owner's screen, Save sends the whole slot to the server and everyone,
-# closing without saving puts the saved values back, the resets ask and then save at once.
+# closing with unsaved changes asks Save / Discard / Cancel, Reset and Restore only preview, Reset all slots asks
+# and then saves at once.
 srv2, wa, wb = runtime("server"), runtime("client"), runtime("client")
 wa.globals().TAP_TEST_DIR = HERE
 wa.eval("loadfile")(os.path.join(HERE, "ui_mock.lua"))(MOD, 15)
@@ -373,33 +375,66 @@ check(abs(wb.eval("M.female.byId['walkie_belt_left@1'].off.X") - 0.4) < 1e-6, "w
 check(wb.eval("M.locs(OTHER)") == "Belt Left@1=10", "window: ben sees amy's knife on her copy")
 L(wa, "WIN.rows.ox.slider:setCurrentValue(-0.1)")
 check(abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.0) < 1e-6, "window: a second preview")
-L(wa, "WIN:close()")
-check(sent(wa) == [], "window: closing without saving sends nothing")
-check(abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: closing without saving puts the saved values back")
+check(wa.eval("WIN.buttons.save.enabled and WIN.buttons.restore.enabled") is True, "window: Save and Restore turn on with unsaved changes")
+L(wa, "M.dialog = nil; WIN:close()")
+check(wa.eval("WIN.asking ~= nil and M.dialog == WIN.asking") is True and sent(wa) == [], "window: closing with unsaved changes asks first")
+check(wa.eval("TienAttachmentPositions.Client.window == WIN") is True, "window: and stays open while asking")
+L(wa, "WIN.asking:press('cancel')")
+check(wa.eval("TienAttachmentPositions.Client.window == WIN and WIN.asking == nil") is True
+      and abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.0) < 1e-6, "window: Cancel keeps the window and the unsaved changes")
+L(wa, "WIN:close(); WIN.asking:press('discard')")
+check(sent(wa) == [], "window: Discard sends nothing")
+check(abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: Discard puts the saved values back")
+check(wa.eval("TienAttachmentPositions.Client.window == nil") is True, "window: Discard closes")
 wpump()
 check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: ben never saw the unsaved one")
-L(wa, """
+OPEN = """
 WIN = TienAttachmentPositionsWindow:new(ME, TienAttachmentPositions.Client.SlotPoints(KNIFE, "belt_left"), "Knife")
 WIN:initialise(); WIN:instantiate(); WIN:createChildren()
 TienAttachmentPositions.Client.window = WIN
 M.dialog = nil
-WIN:onReset()
-""")
-check(wa.eval("M.dialog ~= nil") and sent(wa) == [], "window: Reset this slot asks first")
-L(wa, "M.dialog:answer('NO')")
-check(sent(wa) == [] and abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: No changes nothing")
-L(wa, "WIN:onReset(); M.dialog:answer('YES')")
+"""
+L(wa, OPEN + "WIN.rows.ox.slider:setCurrentValue(0.4); WIN:close(); WIN.asking:press('save')")
+wpump()
+check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.5) < 1e-6, "window: Save in the close prompt saves for everyone")
+check(wa.eval("TienAttachmentPositions.Client.window == nil") is True, "window: and closes")
+L(wa, OPEN + "WIN:close()")
+check(wa.eval("M.dialog == nil and TienAttachmentPositions.Client.window == nil") is True, "window: closing without changes does not ask")
+L(wa, OPEN)
+check(wa.eval("WIN.buttons.save.enabled or WIN.buttons.restore.enabled") is False and wa.eval("WIN.buttons.reset.enabled") is True,
+      "window: a saved slot opens with Save and Restore off, Reset on")
+L(wa, "WIN:onReset()")
+check(sent(wa) == [] and abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6, "window: Reset shows the game's spot and saves nothing")
+check(abs(wa.eval("WIN.rows.ox.slider:getCurrentValue()")) < 1e-6 and wa.eval("WIN.buttons.reset.enabled") is False, "window: Reset sets the sliders to the game's spot")
+wpump()
+check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.5) < 1e-6, "window: ben does not see Reset before Save")
+L(wa, "WIN:onRestore()")
+check(sent(wa) == [] and abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.5) < 1e-6, "window: Restore goes back to the last save")
+check(abs(wa.eval("WIN.rows.ox.slider:getCurrentValue()") - 0.4) < 1e-6 and wa.eval("WIN:isDirty()") is False, "window: Restore leaves nothing unsaved")
+L(wa, "WIN:onReset(); WIN:onSave()")
 wpump()
 check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6 and abs(wb.eval("M.female.byId['walkie_belt_left@1'].off.X") - 0.2) < 1e-6,
-      "window: Yes resets the whole slot for everyone without Save")
+      "window: Reset then Save resets the whole slot for everyone")
 L(wa, "WIN.rows.ox.slider:setCurrentValue(0.2); WIN:onSave()")
 wpump()
 L(wa, "M.dialog = nil; WIN:onResetAll()")
-check(wa.eval("M.dialog ~= nil") and sent(wa) == [], "window: Reset every slot asks first")
-L(wa, "M.dialog:answer('YES')")
+check(wa.eval("M.dialog ~= nil and M.dialog == WIN.asking") is True and sent(wa) == [], "window: Reset all slots asks first")
+L(wa, "WIN.asking:press('cancel')")
+check(sent(wa) == [] and abs(wa.eval("M.female.byId['belt_left@1'].off.X") - 0.3) < 1e-6, "window: Cancel changes nothing")
+L(wa, "WIN:onResetAll(); WIN.asking:press('reset')")
 wpump()
-check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6, "window: Yes resets every slot for everyone without Save")
-check(abs(wa.eval("WIN.rows.ox.slider:getCurrentValue()")) < 1e-6, "window: and the sliders show it")
+check(abs(wb.eval("M.female.byId['belt_left@1'].off.X") - 0.1) < 1e-6, "window: Reset all slots resets every slot for everyone without Save")
+check(abs(wa.eval("WIN.rows.ox.slider:getCurrentValue()")) < 1e-6 and wa.eval("WIN:isDirty()") is False, "window: and the sliders show it")
+Z0 = wa.eval("M.female.byId['belt_left@1'].off.Z")
+L(wa, "WIN.rows.oz.slider:setCurrentValue(0.25)")
+check(abs(wa.eval("M.female.byId['belt_left@1'].off.Z") - Z0 - 0.25) < 1e-6, "window: an unsaved preview after reset all")
+L(wa, "WIN:onResetAll(); WIN.asking:press('reset')")
+wpump()
+check(abs(wa.eval("M.female.byId['belt_left@1'].off.Z") - Z0) < 1e-6, "window: reset all also drops an unsaved preview with nothing stored")
+L(wa, "WIN.rows.ox.slider:setCurrentValue(0.1); TienAttachmentPositions.Client.Open(ME, KNIFE, 'Belt Left', 'belt_left')")
+check(wa.eval("TienAttachmentPositions.Client.window == WIN and WIN.asking ~= nil") is True, "window: opening another window with unsaved changes asks first")
+L(wa, "WIN.asking:press('discard')")
+check(wa.eval("TienAttachmentPositions.Client.window ~= nil and TienAttachmentPositions.Client.window ~= WIN") is True, "window: then opens the new one")
 for name, rt in (("amy", wa), ("ben", wb)):
     check(len(list(rt.eval("M.errors").values())) == 0, f"window: no errors on {name} " + repr(list(rt.eval("M.errors").values())))
 

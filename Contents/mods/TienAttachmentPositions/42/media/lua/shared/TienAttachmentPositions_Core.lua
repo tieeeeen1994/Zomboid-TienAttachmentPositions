@@ -2,7 +2,7 @@ TienAttachmentPositions = TienAttachmentPositions or {}
 local Core = TienAttachmentPositions
 
 Core.MODULE = "TienAttachmentPositions"
-Core.VERSION = "0.1.8"
+Core.VERSION = "0.1.9"
 Core.MOVE = 0.5
 Core.TURN = 180
 Core.SIZE_MIN = 0.25

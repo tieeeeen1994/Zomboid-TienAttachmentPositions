@@ -13,8 +13,9 @@ Move, turn and resize what hangs on your character, and every other player sees 
   players see your items where you put them. They stay after relogging, a server restart and a new character.
 - **Per slot.** A setting belongs to the hotbar slot, so every item you hang there follows it, a different weapon you
   put there later and the with-bag spots on the back included. Moving a slider shows the change on your screen
-  only; **Save** stores it for the whole slot and every player sees it. Closing the window without saving puts it back.
-  **Reset this slot** and **Reset every slot** ask first, then apply at once.
+  only; **Save** stores it for the whole slot and every player sees it. **Reset** shows where the game hangs things and
+  **Restore** goes back to your last save; neither saves by itself. Closing with unsaved changes asks whether to save
+  them. **Reset all slots** (top right) asks first, then puts every slot back at once.
 
 ## Notes
 

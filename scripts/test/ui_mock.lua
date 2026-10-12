@@ -22,6 +22,11 @@ function Base:addToUIManager() self.shown = true end
 function Base:removeFromUIManager() self.shown = false end
 function Base:getRight() return self.x + self.width end
 function Base:getBottom() return self.y + self.height end
+function Base:getX() return self.x end
+function Base:getWidth() return self.width end
+function Base:setVisible(v) self.visible = v end
+function Base:setAlwaysOnTop(v) self.onTop = v end
+function Base:bringToTop() self.top = true end
 
 ISCollapsableWindow = setmetatable({}, { __index = Base })
 ISCollapsableWindow.__index = ISCollapsableWindow
@@ -38,7 +43,18 @@ function ISLabel:setName(n) self.name = n self.width = #n * charW end
 
 ISButton = setmetatable({}, { __index = Base })
 ISButton.__index = ISButton
-function ISButton:new(x, y, w, h, title, target, fn) local o = element(x, y, w, h) o.title, o.target, o.fn = title, target, fn return setmetatable(o, self) end
+function ISButton:new(x, y, w, h, title, target, fn) local o = element(x, y, w, h) o.title, o.target, o.fn, o.enabled = title, target, fn, true return setmetatable(o, self) end
+function ISButton:setEnable(v) self.enabled = v end
+function ISButton:enableAcceptColor() self.accept = true end
+function ISButton:enableCancelColor() self.cancel = true end
+function ISButton:click() if self.enabled then self.fn(self.target, self) end end
+
+ISPanel = setmetatable({}, { __index = Base })
+ISPanel.__index = ISPanel
+function ISPanel:derive(name) local c = setmetatable({ Type = name }, { __index = self }) c.__index = c return c end
+function ISPanel.new(self, x, y, w, h) local o = element(x, y, w, h) return setmetatable(o, self) end
+function ISPanel:createChildren() end
+function ISPanel:addToUIManager() self.shown = true if not self.created then self.created = true self:createChildren() end M.dialog = self end
 
 ISSliderPanel = setmetatable({}, { __index = Base })
 ISSliderPanel.__index = ISSliderPanel
@@ -51,16 +67,6 @@ function ISSliderPanel:setCurrentValue(v, ignore)
     if not ignore then self.onValueChange(self.target, v, self) end
 end
 function ISSliderPanel:getCurrentValue() return self.currentValue end
-
-ISModalDialog = setmetatable({}, { __index = Base })
-ISModalDialog.__index = ISModalDialog
-function ISModalDialog:new(x, y, w, h, text, yesno, target, onclick, player, p1, p2)
-    local o = element(x, y, w, h)
-    o.text, o.yesno, o.target, o.onclick, o.param1, o.param2 = text, yesno, target, onclick, p1, p2
-    M.dialog = o
-    return setmetatable(o, self)
-end
-function ISModalDialog:answer(internal) self.onclick(self.target, { internal = internal }, self.param1, self.param2) end
 
 local f = assert(loadfile(modDir .. "/media/lua/client/TienAttachmentPositions_Window.lua"))
 f()

@@ -302,7 +302,12 @@ local function onContextMenu(playerNum, context, items)
 end
 
 function Client.Open(player, item, base, point)
-    if Client.window then Client.window:close() end
+    if Client.window then
+        local old = Client.window
+        old:close(function() Client.Open(player, item, base, point) end)
+        if Client.window == old and old.bringToTop then old:bringToTop() end
+        return
+    end
     local window = TienAttachmentPositionsWindow:new(player, Client.SlotPoints(item, point),
         item:getDisplayName() .. " - " .. slotName(item, base))
     window:initialise()

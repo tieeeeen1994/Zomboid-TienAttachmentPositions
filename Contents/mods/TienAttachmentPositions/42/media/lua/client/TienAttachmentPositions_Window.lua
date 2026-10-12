@@ -1,7 +1,7 @@
 require "ISUI/ISCollapsableWindow"
+require "ISUI/ISPanel"
 require "ISUI/ISLabel"
 require "ISUI/ISButton"
-require "ISUI/ISModalDialog"
 require "RadioCom/ISUIRadio/ISSliderPanel"
 require "TienAttachmentPositions_Core"
 
@@ -9,6 +9,9 @@ local Core = TienAttachmentPositions
 
 TienAttachmentPositionsWindow = ISCollapsableWindow:derive("TienAttachmentPositionsWindow")
 local Window = TienAttachmentPositionsWindow
+
+TienAttachmentPositionsAsk = ISPanel:derive("TienAttachmentPositionsAsk")
+local Ask = TienAttachmentPositionsAsk
 
 local FONT = UIFont.Small
 
@@ -41,45 +44,71 @@ local function wrap(text, width)
     return lines
 end
 
-local function layout(heading)
+local function copy(v)
+    local c = {}
+    for _, key in ipairs(Core.FIELDS) do c[key] = v[key] end
+    return c
+end
+
+local function same(a, b)
+    for _, key in ipairs(Core.FIELDS) do
+        if math.abs((a[key] or 0) - (b[key] or 0)) > 0.0005 then return false end
+    end
+    return true
+end
+
+local function metrics()
     local fh = getTextManager():getFontHeight(FONT)
-    local L = { fh = fh }
-    L.pad = math.max(8, math.floor(fh * 0.6))
-    L.gap = math.max(4, math.floor(fh * 0.3))
-    L.rowH = math.max(fh + 4, 18)
+    local M = { fh = fh }
+    M.pad = math.max(8, math.floor(fh * 0.6))
+    M.gap = math.max(4, math.floor(fh * 0.3))
+    M.buttonH = fh + M.gap * 2
+    return M
+end
+
+local function buttonSpecs(list, M)
+    local w = 0
+    for i, b in ipairs(list) do
+        b.text = getText(b.key)
+        b.tip = b.tipKey and getText(b.tipKey) or nil
+        b.w = measure(b.text) + M.pad * 2
+        w = w + b.w + (i > 1 and M.gap or 0)
+    end
+    return w
+end
+
+local function layout(heading)
+    local L = metrics()
+    L.rowH = math.max(L.fh + 4, 18)
     L.labelW = 0
     for _, row in ipairs(ROWS) do
         L.labelW = math.max(L.labelW, measure(getText(row.text)))
     end
     L.valueW = measure("-180.000")
-    L.sliderW = math.max(200, fh * 12)
-    L.buttons = {
-        { text = getText("IGUI_TienAttachmentPositions_Save"), fn = Window.onSave },
-        { text = getText("IGUI_TienAttachmentPositions_Reset"), fn = Window.onReset },
-        { text = getText("IGUI_TienAttachmentPositions_ResetAll"), fn = Window.onResetAll },
-        { text = getText("IGUI_TienAttachmentPositions_Close"), fn = Window.close },
+    L.left = {
+        { key = "IGUI_TienAttachmentPositions_Reset", tipKey = "IGUI_TienAttachmentPositions_ResetTip", fn = Window.onReset, id = "reset" },
+        { key = "IGUI_TienAttachmentPositions_Restore", tipKey = "IGUI_TienAttachmentPositions_RestoreTip", fn = Window.onRestore, id = "restore" },
     }
-    L.buttonH = fh + L.gap * 2
-    for _, b in ipairs(L.buttons) do
-        b.w = measure(b.text) + L.pad * 2
-    end
+    L.right = {
+        { key = "IGUI_TienAttachmentPositions_Save", fn = Window.onSave, id = "save", accept = true },
+        { key = "IGUI_TienAttachmentPositions_Close", fn = Window.onClose, id = "close" },
+    }
+    L.leftW = buttonSpecs(L.left, L)
+    L.rightW = buttonSpecs(L.right, L)
+    L.resetAll = { key = "IGUI_TienAttachmentPositions_ResetAll", tipKey = "IGUI_TienAttachmentPositions_ResetAllTip", fn = Window.onResetAll, id = "resetAll" }
+    buttonSpecs({ L.resetAll }, L)
+    L.th = math.max(16, L.fh + 1)
+    L.title = getText("IGUI_TienAttachmentPositions_Title")
+    local titleSide = L.resetAll.w + (L.th - 2) + L.gap * 3
     local maxInner = getCore():getScreenWidth() - 20 - L.pad * 2
     local fixed = L.labelW + L.pad + L.pad + L.valueW
-    L.sliderW = math.max(100, math.min(L.sliderW, maxInner - fixed))
+    local want = math.max(fixed + math.max(200, L.fh * 12), L.leftW + L.pad * 2 + L.rightW,
+        measure(L.title) + titleSide * 2 - L.pad * 2)
+    L.sliderW = math.max(100, math.min(want, maxInner) - fixed)
     L.innerW = fixed + L.sliderW
-    L.buttonRows = { {} }
-    local rowW = 0
-    for _, b in ipairs(L.buttons) do
-        local row = L.buttonRows[#L.buttonRows]
-        if #row > 0 and rowW + L.gap + b.w > L.innerW then
-            row = {}
-            table.insert(L.buttonRows, row)
-            rowW = 0
-        end
-        b.w = math.min(b.w, L.innerW)
-        rowW = rowW + (#row > 0 and L.gap or 0) + b.w
-        table.insert(row, b)
-    end
+    L.bottomRows = (L.leftW + L.pad + L.rightW <= L.innerW) and 1 or 2
+    for _, b in ipairs(L.left) do b.w = math.min(b.w, L.innerW) end
+    for _, b in ipairs(L.right) do b.w = math.min(b.w, L.innerW) end
     L.heading = wrap(heading, L.innerW)
     L.note = wrap(getText("IGUI_TienAttachmentPositions_Note"), L.innerW)
     L.width = L.innerW + L.pad * 2
@@ -95,14 +124,14 @@ function Window:new(player, points, heading)
     o.point = points[1]
     o.has = {}
     for _, p in ipairs(points) do o.has[p] = true end
-    o.dirty = false
-    o.title = getText("IGUI_TienAttachmentPositions_Title")
+    o.title = L.title
     o.resizable = false
+    o.buttons = {}
     local th = o:titleBarHeight()
     L.top = th + L.pad
     local function height()
         return L.top + #L.heading * L.fh + L.gap + #L.note * L.fh + L.pad
-            + #ROWS * (L.rowH + L.gap) + L.pad + #L.buttonRows * (L.buttonH + L.gap) - L.gap + L.pad
+            + #ROWS * (L.rowH + L.gap) + L.pad + L.bottomRows * (L.buttonH + L.gap) - L.gap + L.pad
     end
     local sw, sh = getCore():getScreenWidth(), getCore():getScreenHeight()
     if height() > sh then L.note = {} end
@@ -120,9 +149,23 @@ function Window:addText(x, y, text, r, g, b)
     return label
 end
 
+function Window:addButton(spec, x, y, h)
+    local button = ISButton:new(x, y, spec.w, h, spec.text, self, spec.fn)
+    button:initialise()
+    button:instantiate()
+    if spec.tip then button.tooltip = spec.tip end
+    if spec.accept then button:enableAcceptColor() end
+    self:addChild(button)
+    self.buttons[spec.id] = button
+    return button
+end
+
 function Window:createChildren()
     ISCollapsableWindow.createChildren(self)
     local L = self.L
+    local th = self:titleBarHeight()
+    local edge = self.collapseButton and self.collapseButton:getX() or (self.width - 1 - (th - 2))
+    self:addButton(L.resetAll, edge - L.gap - L.resetAll.w, 1, th - 2)
     local x, y = L.pad, L.top
     for _, line in ipairs(L.heading) do
         self:addText(x, y, line, 1, 1, 1)
@@ -149,16 +192,16 @@ function Window:createChildren()
         y = y + L.rowH + L.gap
     end
     y = y + L.pad - L.gap
-    for _, row in ipairs(L.buttonRows) do
-        local bx = L.pad
-        for _, b in ipairs(row) do
-            local button = ISButton:new(bx, y, b.w, L.buttonH, b.text, self, b.fn)
-            button:initialise()
-            button:instantiate()
-            self:addChild(button)
-            bx = bx + b.w + L.gap
-        end
-        y = y + L.buttonH + L.gap
+    local bx = L.pad
+    for _, b in ipairs(L.left) do
+        self:addButton(b, bx, y, L.buttonH)
+        bx = bx + b.w + L.gap
+    end
+    if L.bottomRows > 1 then y = y + L.buttonH + L.gap end
+    bx = L.pad + L.innerW - L.rightW
+    for _, b in ipairs(L.right) do
+        self:addButton(b, math.max(L.pad, bx), y, L.buttonH)
+        bx = bx + b.w + L.gap
     end
     self:reload()
 end
@@ -173,27 +216,45 @@ function Window:current()
     return c
 end
 
+function Window:isDirty()
+    return self.v ~= nil and self.saved ~= nil and not same(self.v, self.saved)
+end
+
+function Window:updateButtons()
+    local dirty = self:isDirty()
+    local b = self.buttons
+    if b.save then b.save:setEnable(dirty) end
+    if b.restore then b.restore:setEnable(dirty) end
+    if b.reset then b.reset:setEnable(self.v ~= nil and not same(self.v, Core.Identity())) end
+end
+
 function Window:show(v)
     self.v = v
     for key, row in pairs(self.rows) do
         row.slider:setCurrentValue(v[key], true)
         row.value:setName(string.format(row.fmt, row.slider:getCurrentValue()))
     end
+    self:updateButtons()
 end
 
 function Window:reload()
-    if self.rows then self:show(self:current()) end
+    if not self.rows then return end
+    self.saved = self:current()
+    self:show(copy(self.saved))
 end
 
 function Window:preview()
-    self.dirty = true
     Core.Client.Prepare(self.player, self.points)
     Core.Client.Preview(self.player, self.points, self.v)
+    self:updateButtons()
 end
 
 function Window:serverUpdate()
-    if self.dirty then
+    if not self.rows then return end
+    if self:isDirty() then
+        self.saved = self:current()
         Core.Client.Preview(self.player, self.points, self.v)
+        self:updateButtons()
     else
         self:reload()
     end
@@ -207,45 +268,153 @@ function Window:onSlider(value, slider)
     self:preview()
 end
 
+
+
+
+
+
+
+
 function Window:onSave()
-    self.dirty = false
     Core.Client.Edit(self.player, self.points, self.v)
     Core.Client.Flush()
-end
-
-function Window:ask(textKey, which)
-    local dialog = ISModalDialog:new(0, 0, 250, 150, getText(textKey), true, self, Window.onAnswer,
-        self.player:getPlayerNum(), which)
-    dialog:initialise()
-    dialog:addToUIManager()
-end
-
-function Window:onAnswer(button, which)
-    if button.internal ~= "YES" then return end
-    self.dirty = false
-    self:show(Core.Identity())
-    if which == "all" then
-        Core.Client.ResetAll(self.player)
-    else
-        Core.Client.Edit(self.player, self.points, self.v)
-        Core.Client.Flush()
-    end
+    self.saved = copy(self.v)
+    self:updateButtons()
 end
 
 function Window:onReset()
-    self:ask("IGUI_TienAttachmentPositions_ResetAsk", "slot")
+    self:show(Core.Identity())
+    self:preview()
+end
+
+function Window:onRestore()
+    self:show(copy(self.saved or self:current()))
+    Core.Client.Preview(self.player, self.points, nil)
+    self:updateButtons()
+end
+
+function Window:ask(textKey, buttons)
+    if self.asking then self.asking:dismiss() end
+    local dialog = Ask:new(self, getText(textKey), buttons)
+    dialog:initialise()
+    dialog:addToUIManager()
+    dialog:setAlwaysOnTop(true)
+    self.asking = dialog
+    return dialog
 end
 
 function Window:onResetAll()
-    self:ask("IGUI_TienAttachmentPositions_ResetAllAsk", "all")
+    self:ask("IGUI_TienAttachmentPositions_ResetAllAsk", {
+        { id = "reset", key = "IGUI_TienAttachmentPositions_ResetAllYes", danger = true, fn = Window.doResetAll },
+        { id = "cancel", key = "IGUI_TienAttachmentPositions_Cancel" },
+    })
 end
 
-function Window:close()
-    if self.dirty then
-        self.dirty = false
+function Window:doResetAll()
+    Core.Client.ResetAll(self.player)
+    self.saved = Core.Identity()
+    self:show(Core.Identity())
+    Core.Client.Preview(self.player, self.points, self.v)
+end
+
+function Window:onClose()
+    self:close()
+end
+
+function Window:close(after)
+    if type(after) ~= "function" then after = nil end
+    if not self:isDirty() then
+        self:closeNow()
+        if after then after() end
+        return
+    end
+    self:ask("IGUI_TienAttachmentPositions_CloseAsk", {
+        { id = "save", key = "IGUI_TienAttachmentPositions_Save", accept = true, fn = function(w)
+            w:onSave()
+            w:closeNow()
+            if after then after() end
+        end },
+        { id = "discard", key = "IGUI_TienAttachmentPositions_Discard", danger = true, fn = function(w)
+            w:closeNow()
+            if after then after() end
+        end },
+        { id = "cancel", key = "IGUI_TienAttachmentPositions_Cancel" },
+    })
+end
+
+function Window:closeNow()
+    if self.asking then self.asking:dismiss() end
+    if self:isDirty() then
+        self.v = copy(self.saved)
         Core.Client.Preview(self.player, self.points, nil)
     end
     if Core.Client.window == self then Core.Client.window = nil end
     ISCollapsableWindow.close(self)
+    self:removeFromUIManager()
+end
+
+function Ask:new(owner, text, buttons)
+    local M = metrics()
+    local rowW = buttonSpecs(buttons, M)
+    local sw, sh = getCore():getScreenWidth(), getCore():getScreenHeight()
+    local textW = math.max(1, math.min(math.max(rowW, M.fh * 20), sw - 20 - M.pad * 2))
+    local lines = wrap(text, textW)
+    local w = math.max(textW, rowW) + M.pad * 2
+    local h = M.pad + #lines * M.fh + M.pad + M.buttonH + M.pad
+    local x = owner.x + math.floor((owner.width - w) / 2)
+    local y = owner.y + math.floor((owner.height - h) / 2)
+    x = math.max(0, math.min(x, sw - w))
+    y = math.max(0, math.min(y, sh - h))
+    local o = ISPanel.new(self, x, y, w, h)
+    o.M = M
+    o.owner = owner
+    o.lines = lines
+    o.specs = buttons
+    o.rowW = rowW
+    o.backgroundColor = { r = 0, g = 0, b = 0, a = 0.9 }
+    o.borderColor = { r = 0.6, g = 0.6, b = 0.6, a = 1 }
+    o.moveWithMouse = true
+    return o
+end
+
+function Ask:createChildren()
+    local M = self.M
+    local y = M.pad
+    for _, line in ipairs(self.lines) do
+        local label = ISLabel:new(M.pad, y, M.fh, line, 1, 1, 1, 1, FONT, true)
+        label:initialise()
+        self:addChild(label)
+        y = y + M.fh
+    end
+    y = y + M.pad
+    local x = self.width - M.pad - self.rowW
+    self.buttons = {}
+    for _, spec in ipairs(self.specs) do
+        local button = ISButton:new(x, y, spec.w, M.buttonH, spec.text, self, Ask.onButton)
+        button.internal = spec.id
+        button:initialise()
+        button:instantiate()
+        if spec.accept then button:enableAcceptColor() end
+        if spec.danger then button:enableCancelColor() end
+        self:addChild(button)
+        self.buttons[spec.id] = button
+        x = x + spec.w + M.gap
+    end
+end
+
+function Ask:onButton(button)
+    self:press(button.internal)
+end
+
+function Ask:press(id)
+    self:dismiss()
+    for _, spec in ipairs(self.specs) do
+        if spec.id == id and spec.fn then spec.fn(self.owner) end
+    end
+end
+
+function Ask:dismiss()
+    if self.owner.asking == self then self.owner.asking = nil end
+    self:setVisible(false)
     self:removeFromUIManager()
 end

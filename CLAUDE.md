@@ -149,7 +149,7 @@ A 0.1.8 draft filled unset points of a slot from its other points every 500 ms a
 user chose a Save button instead (2026-10-12), so nothing is checked periodically besides the 2 s `Normalize`.
 Settings saved per point before 0.1.7 line up once Save is pressed in the window.
 
-### Editing: preview, Save, resets (0.1.8)
+### Editing: preview, Save, Reset, Restore (0.1.9)
 
 Sliders only preview: `Client.Preview` applies the window's values to the player's own copies on this screen
 (`Core.ApplyValues(ns, point, v)`; nothing sent, nothing stored). A point not registered yet cannot be previewed (no
@@ -157,11 +157,35 @@ copy to move the item to, and the attach of a copy location must reach every cli
 first preview calls `Client.Prepare`: one `set` of identity values for the slot's unregistered points only, which
 registers them everywhere without changing their look; the `pt` echo makes the window re-apply its preview
 (`Window:serverUpdate`, which keeps the sliders while there are unsaved changes). **Save** = `Client.Edit` of the
-window's values for every point of the slot + `Flush`: one `set`, one `pt` to everyone. Closing with unsaved changes
-re-applies the stored values (`Preview(nil)`). **Reset this slot** / **Reset every slot** ask with an `ISModalDialog`
-(yes / no) and on yes save at once (identity `set` for the slot / `resetAll`), no Save needed. Each `set` has a
-sequence number per user and point (one for all the points of a slot); an echo older than the latest local one is
-registered but its values are ignored.
+window's values for every point of the slot + `Flush`: one `set`, one `pt` to everyone.
+
+"Unsaved" (`Window:isDirty`) = the sliders differ from `Window.saved`, the values last saved for the item's own point
+(set on open, on Save, on Reset all slots, and from the store on every server update the window gets), so dragging
+back to the saved spot counts as no change. Save and Restore are enabled only while unsaved, Reset only away from the
+game's spot. Bottom row: **Reset** (left) shows the game's spot (identity) as a preview, **Restore** shows the last
+saved values again (`Preview(nil)`); neither sends anything. **Save** / **Close** on the right. **Reset all slots**
+sits in the title bar, left of the collapse button, and is the only button that saves by itself: it asks first,
+then sends `resetAll` and previews identity on the slot at once (the server echoes only points that had stored
+values, so an unsaved preview of a slot with nothing stored would otherwise stay). The window is made wide enough
+that the centred title clears it.
+
+Closing (Close, the title bar X, or opening the window for another item, `Client.Open`) with unsaved changes asks
+**Save / Discard / Cancel** (`Window:close(after)`; `after` runs once it really closed, which is how `Client.Open`
+opens the next window); Discard re-applies the stored values (`closeNow`). The questions are the window's own panel
+(`TienAttachmentPositionsAsk`, `Window.asking`, word-wrapped from the font, buttons by id, `press(id)`), not
+`ISModalDialog`: that one only draws `\n`-split lines (a long sentence makes it as wide as the sentence), has only
+yes/no or ok, and its `destroy` sets the game speed to 1 whenever it closes in game.
+
+Each `set` has a sequence number per user and point (one for all the points of a slot); an echo older than the
+latest local one is registered but its values are ignored.
+
+### Drag handles: tried and dropped (2026-10-12)
+
+Arrows and rings on the character like Extended 3D Placement (vanilla's world `Gizmos`, see "3D gizmos from Lua
+(42.21)" in the ZomboidFixesB42 notes) were built and removed before release. Lua cannot read bone transforms, so the
+handles had to use a fixed idle pose computed offline, sat on the attachment point rather than on the item, and
+would drift whenever the body moves; the user chose sliders only. The pose extraction method is in the ZomboidFixesB42
+notes if it is ever wanted again.
 
 ### Clothing-hidden points
 
@@ -185,18 +209,22 @@ and moved a spot for every character on that screen, which would make players lo
   which the hotbar's right-click menu fires too), Plysken switch-off, `hello` once the online ID is known.
 - `client/TienAttachmentPositions_Window.lua`: the window. Everything is measured from the font
   (`getFontHeight`, `MeasureStringX`): label column = widest label, value column = "-180.000", sliders 12 font heights
-  (shrunk to fit the screen width, at least 100), heading and note word-wrapped, buttons sized to their text and
-  wrapped onto more rows when needed, the note dropped when the window would be taller than the screen.
+  (shrunk to fit the screen width, at least 100; widened so the bottom buttons and the title-bar button fit), heading
+  and note word-wrapped, buttons sized to their text (Reset / Restore left, Save / Close right, on two rows when the
+  screen is too narrow for one), the note dropped when the window would be taller than the screen. Also the question
+  panel (`TienAttachmentPositionsAsk`).
 
 ## Tests
 
 `scripts/test`: `mock.lua` imitates the Java side (location group with `checkValid`, model scripts, class
 metatables, players, commands); `run.py` runs single player and a server with three clients, routing commands and
 attach packets the way the game does (Java-side attaches call the original method, not the wrapper), plus a second
-server with two clients driving the real window (preview, Save, close, both resets); `ui_mock.lua` holds the stand-ins
-for the vanilla UI classes (a dialog answers through `M.dialog:answer("YES")`); `win.py` builds the window at several
+server with two clients driving the real window (preview, Save, the close prompt, Reset, Restore, Reset all slots,
+opening another window); `ui_mock.lua` holds the stand-ins for the vanilla UI classes (the last question shown is
+`M.dialog`; answer with `WIN.asking:press("save" | "discard" | "cancel" | "reset")`); `win.py` builds the window at several
 font and screen sizes and checks for overflow and overlaps. Needs lupa:
-`py -m pip install --target <dir> lupa`, then `LUPA_PATH=<dir> py -I scripts/test/run.py` (and `win.py`).
+`py -m pip install --target <dir> lupa`, then `LUPA_PATH=<dir> py -I scripts/test/run.py` (and `win.py`). On the Mac
+lupa is in the user site (`LUPA_PATH=~/.local/lib/python3.14/site-packages python3 -I scripts/test/run.py`).
 
 ## To verify
 
