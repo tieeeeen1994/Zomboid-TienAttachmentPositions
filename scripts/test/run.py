@@ -177,6 +177,7 @@ def pump():
                         continue
                     target = "OTHER"
                     res = ort.eval(f"function(loc) local ok, e = pcall(M.javaSet, {target}, loc, {('M.item(%d)' % iid) if iid is not None else 'nil'}); if not ok then table.insert(M.errors, tostring(e)) end end")(p.loc)
+        srv.execute("Events.OnTick.fire()")
         out = list(srv.eval("M.out").values())
         srv.execute("M.out = {}")
         for msg in out:
@@ -200,7 +201,7 @@ M.now = 1000; Events.OnTick.fire()
 """)
 pump()
 check(ca.eval("M.locs(ME)") == "Belt Left@1=10", "MP: alice's own copy after the server's answer")
-check(srv.eval("M.locs(SP_.alice)") == "Belt Left@1=10", "MP: server follows")
+check(srv.eval("M.locs(SP_.alice)") == "Belt Left=10", "MP: server keeps alice's knife on the base name (what joiners are sent)")
 check(cb.eval("M.locs(OTHER)") == "Belt Left@1=10", "MP: bob sees alice's knife on alice's copy")
 check(abs(cb.eval("M.female.byId['belt_left@1'].off.X") - 0.2) < 1e-6, "MP: bob's game has alice's offset")
 check(cb.eval("M.female.byId['belt_left'].off.X") == 0.1, "MP: bob's base point untouched")
@@ -230,10 +231,38 @@ L(cc, """
 ME = M.player("carol", true); OTHER = M.player("alice", false)
 M.locals = { ME }; M.online = { ME, OTHER }
 """)
-# Carol's copy of alice was loaded before the mod's data: the clone location was skipped (readInventory).
+# Carol's game builds alice from the server's list before the mod's data (ConnectedPacket): an unknown location
+# throws there, after the character already stands in the world, and leaves a ghost.
+LOAD_REMOTE = """
+function(remote, list)
+    for _, e in ipairs(list) do
+        local ok, err = pcall(M.javaSet, remote, e[1], M.item(e[2]))
+        if not ok then table.insert(M.errors, "ghost: " .. tostring(err)) end
+    end
+end
+"""
+SERVER_LIST = "function(p) local t = {} for _, e in ipairs(p.ai.items) do t[#t + 1] = { e.loc, e.item.id } end return t end"
+
+
+def load_remote(rt, server_user, remote="OTHER"):
+    lst = srv.eval(SERVER_LIST)(srv.eval(f"SP_.{server_user}"))
+    entries = ", ".join("{ %r, %d }" % (e[1], e[2]) for e in lst.values())
+    rt.eval(LOAD_REMOTE)(rt.eval(remote), rt.eval("{ " + entries + " }"))
+
+
+load_remote(cc, "alice")
+check(len(list(cc.eval("M.errors").values())) == 0, "MP: late joiner loads alice from the server's list without an error (no ghost) " + repr(list(cc.eval("M.errors").values())))
+check(cc.eval("M.locs(OTHER)") == "Belt Left=10", "MP: late joiner first shows alice's knife on the base")
 L(cc, "Events.OnGameStart.fire()")
 pump()
-check(cc.eval("M.locs(OTHER)") == "Belt Left@1=10", "MP: late joiner gets alice's knife on alice's copy (resend)")
+check(cc.eval("M.locs(OTHER)") == "Belt Left@1=10", "MP: late joiner moves alice's knife to alice's copy once the data arrives")
+# Alice comes back into carol's view (timeout, vehicle): carol rebuilds her from the server's list again.
+L(cc, "OTHER.ai.items = {}")
+load_remote(cc, "alice")
+check(cc.eval("M.locs(OTHER)") == "Belt Left=10", "MP: reloaded remote player starts on the base")
+L(cc, "M.now = M.now + 600; Events.OnTick.fire()")
+check(cc.eval("M.locs(OTHER)") == "Belt Left@1=10", "MP: reloaded remote player moved to the copy within the remote check")
+check(len(list(cc.eval("M.out").values())) == 0 and len(list(cc.eval("M.packets").values())) == 0, "MP: moving a remote player's items sends nothing")
 check(len(list(cc.eval("M.errors").values())) == 0, "MP: no errors on carol " + repr(list(cc.eval("M.errors").values())))
 # Alice relogs. The server reloads her from its save with the knife on her copy (registered there at world init);
 # her fresh game loaded her before the mod's data arrived, so it skipped that location and the knife hangs nowhere.
@@ -274,7 +303,7 @@ Events.OnGameStart.fire()
         L(ca2, "if not ME:getAttachedItem('Belt Left') then ME:setAttachedItem('Belt Left', KNIFE) end")
         pump()
     check(ca2.eval("M.locs(ME)") == "Belt Left@1=10", f"MP relog (hotbar {when} data): alice's knife back on her copy: " + ca2.eval("M.locs(ME)"))
-    check(srv.eval("M.locs(SP_.alice)") == "Belt Left@1=10", f"MP relog (hotbar {when} data): server keeps her copy: " + srv.eval("M.locs(SP_.alice)"))
+    check(srv.eval("M.locs(SP_.alice)") == "Belt Left=10", f"MP relog (hotbar {when} data): server keeps the base name: " + srv.eval("M.locs(SP_.alice)"))
     check(cb.eval("M.locs(OTHER)") == "Belt Left@1=10", f"MP relog (hotbar {when} data): bob still sees her copy: " + cb.eval("M.locs(OTHER)"))
     check(abs(ca2.eval("M.female.byId['belt_left@1'] and M.female.byId['belt_left@1'].off.X or -1") - 0.5) < 1e-6,
           f"MP relog (hotbar {when} data): alice's game has her offset again")

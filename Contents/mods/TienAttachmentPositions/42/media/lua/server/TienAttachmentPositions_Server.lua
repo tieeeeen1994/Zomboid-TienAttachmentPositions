@@ -103,7 +103,18 @@ function Server.Handle(player, command, args)
     end
 end
 
+local function onTick()
+    if not isServer() then return end
+    local online = getOnlinePlayers()
+    if not online then return end
+    for i = 0, online:size() - 1 do
+        local player = online:get(i)
+        if player then Core.ToBase(player) end
+    end
+end
+
 Events.OnInitGlobalModData.Add(load)
+Events.OnTick.Add(onTick)
 
 Events.OnClientCommand.Add(function(module, command, player, args)
     if module ~= Core.MODULE then return end

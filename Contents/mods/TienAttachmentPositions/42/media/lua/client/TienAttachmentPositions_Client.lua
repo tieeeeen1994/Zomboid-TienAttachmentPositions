@@ -12,6 +12,8 @@ Client.CHECK_MS = 2000
 
 local lastSend = 0
 local lastCheck = 0
+local lastRemote = 0
+Client.REMOTE_MS = 500
 local helloAt, helloTries = nil, 0
 local helloWait = false
 Client.HELLO_MS = 1000
@@ -54,7 +56,7 @@ local function refresh(user)
     end)
     if newBody then Core.ReapplyAll() end
     Core.EachPlayer(function(player)
-        if player:isLocalPlayer() then Core.Normalize(player) end
+        Core.Normalize(player)
         if newBody or user == nil or player:getUsername() == user then player:resetModelNextFrame() end
     end)
 end
@@ -240,6 +242,14 @@ local function onTick()
         for i = 0, getNumActivePlayers() - 1 do
             local player = getSpecificPlayer(i)
             if player and Core.IdOf(player) then Core.Normalize(player) end
+        end
+    end
+    if now - lastRemote >= Client.REMOTE_MS then
+        lastRemote = now
+        local online = getOnlinePlayers()
+        for i = 0, (online and online:size() or 0) - 1 do
+            local player = online:get(i)
+            if player and not player:isLocalPlayer() and Core.IdOf(player) then Core.Normalize(player) end
         end
     end
     for _ in pairs(Client.pending) do

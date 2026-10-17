@@ -64,10 +64,11 @@ a key on `IsoPlayer`'s shadows `IsoGameCharacter`'s for players only; zombies un
 `instanceof`) gets two wrappers, originals kept in `index.TienAttachmentPositions_Originals` so a reload never wraps
 twice:
 
-- `setAttachedItem(loc, item)` (client: local players; server: every player): with an item, attaches to the player's
+- `setAttachedItem(loc, item)` on a client (local players only): with an item, attaches to the player's
   copy when they have values for that point, else to the base, after emptying the other variant (two packets: one
   clearing, one attaching; the remote client's copy of a moved item is a fresh object, so Java's own
   "remove the item from its old location" would not find it there). With `nil`, detaches where the item really is.
+  On the server (every player, `Core.BaseTarget`) it does the opposite: always the base name, emptying the copy.
 - `getAttachedItem(loc)` (every player): a base name finds the item on that player's copy. **Essential**: vanilla
   `ISHotbar:update` re-attaches every frame any item for which `getAttachedItem(item:getAttachedToModel())` is nil,
   and `ISAttachItemHotbar:stop` compares with it.
@@ -79,10 +80,35 @@ location is unknown is skipped on load, and the hotbar re-attaches it from `atta
 Java-side attaches (packet handlers, loading) never go through the wrappers; all player attaches in vanilla and
 the slot mods start in Lua.
 
+### The server keeps base names (0.1.10)
+
+The server's copy of every player only ever holds base location names: its `OnTick` (`Core.ToBase`, every online
+player, ~10 a second) moves anything Java put on a copy (the relayed attach packets of owners) back to the base, and
+its wrapper attaches to the base. Each client moves other players' items onto their copies **locally**
+(`Core.Normalize` on a remote player sends nothing: Java sends an attach only for a local player): at every `all` /
+`pt` and every 500 ms (`Client.REMOTE_MS`). The owner's own client still uses the copy and sends it, so other clients
+get live attaches with copy names as before.
+
+Why: a client builds another player from `ConnectedPacket` (on joining, and again whenever that player is re-sent:
+reconnect, back after the client's 5 s timeout, a vehicle seat), whose attached list is the server's location names.
+`ConnectedPacket.parse` creates the `IsoPlayer` first (the constructor already puts it in a square's moving objects),
+sets name and role, and only after the attached items puts it in `GameClient.IDToPlayerMap`. A copy name the client
+does not know yet (always the case while joining: the mod's `all` arrives seconds later) throws `no such location` in
+`setAttachedItem`, so the half-built player stays in the square and is never added to the ID map or the update list:
+a ghost with a nametag and collision but no animated body, where the player stood. The next player packet asks
+again, so the real player appears next to it. Seen 2026-10-17 with 0.1.9 (a duplicate "jenek"); a relog of the
+client that sees it clears it. Pre-creating every `<location>@<n>` on every client was rejected:
+`AttachedLocationGroup.indexOf` / `getLocation` are linear scans run on every `getAttachedItem`. Left: an attach with a
+copy name that reaches the server in the same update as a `PlayerDataRequest` or a join can still go out before
+`OnTick` moves it back. Corpses are made from the server's copy, so a dead player's items show at the game's spots.
+
+The `run.py` late-joiner check loads alice from the server's list through `M.javaSet` (throws like Java) and fails
+on 0.1.9 with that exact error.
+
 ### Ordering
 
 A client must know `<location>@<ns>` before an attach naming it arrives (`AttachedItems.setItem` → `checkValid`
-throws there; loading skips it instead). So:
+throws there; loading skips it instead; `ConnectedPacket` throws and leaves a ghost, see above). So:
 
 - The owner only uses a copy once the server's broadcast `pt` registered it on its own client (sent to everyone at the
   same time), and the server registers before broadcasting (`processServer` checks too).
@@ -204,7 +230,8 @@ and moved a spot for every character on that screen, which would make players lo
 - `shared/TienAttachmentPositions_Core.lua`: names, clamping, registry (`Register`, `ApplyValues`, `RegisterAll`,
   `ResetWorld` on each world load since scripts are reloaded), the wrappers, `Normalize` / `Resend`, transport.
 - `server/TienAttachmentPositions_Server.lua`: store, `OnInitGlobalModData` registration (before players load, so
-  saved copy locations stay attached on the server), command handler.
+  copy locations saved by 0.1.9 and earlier stay attached until `OnTick` moves them to the base; the server must also
+  know the copies to accept the owners' attach packets), command handler, `OnTick` base normalization.
 - `client/TienAttachmentPositions_Client.lua`: command handler, local edits, context menu (`OnFillInventoryObjectContextMenu`,
   which the hotbar's right-click menu fires too), Plysken switch-off, `hello` once the online ID is known.
 - `client/TienAttachmentPositions_Window.lua`: the window. Everything is measured from the font

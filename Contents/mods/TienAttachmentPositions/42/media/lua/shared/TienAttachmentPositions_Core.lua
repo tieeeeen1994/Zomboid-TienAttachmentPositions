@@ -2,7 +2,7 @@ TienAttachmentPositions = TienAttachmentPositions or {}
 local Core = TienAttachmentPositions
 
 Core.MODULE = "TienAttachmentPositions"
-Core.VERSION = "0.1.9"
+Core.VERSION = "0.1.10"
 Core.MOVE = 0.5
 Core.TURN = 180
 Core.SIZE_MIN = 0.25
@@ -358,24 +358,45 @@ function Core.Want(chr, base)
     return base
 end
 
-local function applies(chr)
-    if instanceof(chr, "IsoAnimal") then return false end
-    if isServer() then return true end
-    return chr:isLocalPlayer()
+function Core.CloneFor(chr, base)
+    local ns = Core.IdOf(chr)
+    local point = Core.PointOf(base)
+    if not ns or not point or not Core.IsRegistered(ns, point) then return nil end
+    return Core.CloneName(base, ns)
 end
 
 function Core.Target(chr, loc, item)
     local base = Core.BaseOf(loc)
-    local ns = Core.IdOf(chr)
-    local point = Core.PointOf(base)
-    if not ns or not point or not Core.IsRegistered(ns, point) then return loc end
-    local clone = Core.CloneName(base, ns)
+    local clone = Core.CloneFor(chr, base)
+    if not clone then return loc end
     if item == nil then
         if loc == base and Core.vanillaGet(chr, clone) then return clone end
         return loc
     end
     if Core.vanillaGet(chr, base) then Core.vanillaSet(chr, base, nil) end
     return clone
+end
+
+function Core.BaseTarget(chr, loc, item)
+    local base = Core.BaseOf(loc)
+    local clone = Core.CloneFor(chr, base)
+    if clone and Core.vanillaGet(chr, clone) then Core.vanillaSet(chr, clone, nil) end
+    return base
+end
+
+function Core.ToBase(chr)
+    if not Core.vanillaSet then return end
+    local attached = chr:getAttachedItems()
+    if not attached then return end
+    local moves = {}
+    for i = 0, attached:size() - 1 do
+        local entry = attached:get(i)
+        local loc = entry:getLocation()
+        if Core.IsClone(loc) then moves[#moves + 1] = { loc, entry:getItem() } end
+    end
+    for _, move in ipairs(moves) do
+        Core.vanillaSet(chr, Core.BaseOf(move[1]), move[2])
+    end
 end
 
 function Core.Lookup(chr, loc)
@@ -492,8 +513,16 @@ local function installWrappers()
     Core.vanillaSet, Core.vanillaGet = vanillaSet, vanillaGet
 
     index.setAttachedItem = function(self, loc, item, ...)
-        if type(loc) == "string" and applies(self) then
-            local ok, target = pcall(Core.Target, self, loc, item)
+        local fn
+        if type(loc) == "string" and not instanceof(self, "IsoAnimal") then
+            if isServer() then
+                fn = Core.BaseTarget
+            elseif self:isLocalPlayer() then
+                fn = Core.Target
+            end
+        end
+        if fn then
+            local ok, target = pcall(fn, self, loc, item)
             if ok and target then
                 loc = target
             elseif not ok then
